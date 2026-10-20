@@ -367,7 +367,7 @@ test('Windows 命令行：带 cmd 特殊字符的参数一律拒绝', () => {
 test('智慧树：控制台里不填课程地址，启动时固定带 --wait-course', () => {
     assert.equal(zhs.options.some((option) => option.key?.[0] === 'course-url'), false);
     assert.deepEqual(zhs.fixedArgs, ['--wait-course']);
-    assert.match(zhs.hint, /点开要刷的课程/);
+    assert.match(zhs.hint, /点开要学的课程/);
 });
 
 test('跑进程：界面能看到这次用了什么设置，但看不到密码', async () => {
