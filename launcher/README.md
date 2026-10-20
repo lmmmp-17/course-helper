@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 终端版（TUI） | 在终端里运行时默认就是它，也可以 `--tui` | `src/tui/`，直接在进程里调用 runner，不走 HTTP |
 | 浏览器版 | `--web`（不在终端里运行时也走这个） | 本地 HTTP 服务 + `public/index.html` |
-| 窗口版 | `--handshake`，由 Windows 外壳启动 | 和浏览器版同一个页面，装在独立窗口里（开发中） |
+| 窗口版 | `--handshake`，由 `网课助手.exe` 启动 | 和浏览器版同一个页面，装在 WebView2 窗口里。外壳在 `desktop/windows/`，见根目录 README 的技术细节 |
 
 ## 命令行参数
 
