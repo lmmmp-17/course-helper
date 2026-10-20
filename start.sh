@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 网课助手（统一启动器）的入口（Linux / macOS）。
-# 会开一个本地控制台，并用你的默认浏览器打开它。
+# 网课助手的入口（Linux / macOS）。
+# 会开一个本地控制台，并用你的默认浏览器打开它；三个平台都在里面启动。
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -17,4 +17,4 @@ if [ "$(node -p 'parseInt(process.versions.node)')" -lt 20 ]; then
     exit 1
 fi
 
-exec node run.mjs "$@"
+exec node launcher/run.mjs "$@"

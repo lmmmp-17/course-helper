@@ -59,7 +59,7 @@ async function main() {
     } else {
         console.log('请把上面那条地址复制到浏览器里打开。');
     }
-    console.log('按 Ctrl+C 退出（正在跑的工具会一起停掉）。');
+    console.log('按 Ctrl+C 退出（正在跑的工具会全部停掉）。');
 
     await new Promise((done) => {
         const bye = () => {

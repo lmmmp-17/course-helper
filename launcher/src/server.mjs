@@ -67,7 +67,13 @@ export async function startServer({ root, runner, publicDir, port = 0, token = r
         }
 
         if (url.pathname === '/api/stop' && req.method === 'POST') {
-            return send(res, 200, { stopped: runner.stop() });
+            let body = '';
+            for await (const chunk of req) body += chunk;
+            let payload;
+            try { payload = JSON.parse(body || '{}'); } catch (e) { return send(res, 400, { error: '请求格式不对' }); }
+            /* 不指定工具就全停 */
+            if (payload.tool !== undefined && !byId(payload.tool)) return send(res, 400, { error: '没有这个工具' });
+            return send(res, 200, { stopped: runner.stop(payload.tool) });
         }
 
         return send(res, 404, { error: '没有这个地址' });

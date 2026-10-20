@@ -111,8 +111,16 @@
   .subject:hover:not(:disabled) { color: var(--ink); }
   .subject[aria-pressed="true"] { color: var(--ink); }
   .subject.missing { text-decoration: line-through 1.5px var(--ink-faint); }
-  .subject:disabled { cursor: default; color: var(--ink-faint); }
-  .subject:disabled[aria-pressed="true"] { color: var(--ink); }
+  /* 平台名旁边的小字：在跑的写已运行时长，中途停了的用红笔标一下 */
+  .subject .tag {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    margin-left: .3em;
+    vertical-align: .6em;
+    line-height: 1;
+  }
+  .subject .tag.pen { color: var(--pen); }
 
   /* 荧光笔：只标正在发生的事。画上去的那一下是唯一一处不由点击触发的动画 */
   .hl {
@@ -291,19 +299,31 @@ const el = (tag, props = {}, ...children) => {
 };
 
 /* ---------- 状态 ---------- */
+/* 三个平台可以同时跑。每个平台各有一份：正在跑的、上次怎么停的、日志。
+ * 页面上一次只展示选中的那个平台，切换平台不影响别的在跑。 */
 const STORE = 'course-launcher:v1';
+const MAX_LOG = 1000;
 const ui = {
   tools: [],
   picked: null,
-  run: null,          /* 正在跑：{ tool, name, startedAt, values } */
-  exit: null,         /* 上一次怎么停的 */
-  toolStatus: '',     /* 工具自己报的 [[status]] */
-  lastLine: '',       /* 没有 [[status]] 时，拿最后一行日志当状态 */
-  starting: false,
-  stopping: false,
+  runs: {},
   linked: true,
   invalid: new Set(),
 };
+
+const blank = () => ({
+  run: null,          /* 正在跑：{ startedAt, values } */
+  exit: null,         /* 上一次怎么停的 */
+  toolStatus: '',     /* 工具自己报的 [[status]] */
+  lastLine: '',       /* 没有 [[status]] 时，拿最后一行日志当状态 */
+  lines: [],
+  starting: false,
+  stopping: false,
+  seen: true,         /* 中途停了、而你还没切过去看的，平台名旁边一直标着 */
+});
+const runOf = (id) => (ui.runs[id] ??= blank());
+const cur = () => (ui.picked ? runOf(ui.picked.id) : blank());
+const running = () => ui.tools.filter((tool) => runOf(tool.id).run);
 
 const remembered = () => { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; } };
 const remember = (patch) => {
@@ -323,29 +343,36 @@ function initialValue(tool, option) {
 }
 
 /* ---------- 抬头 ---------- */
+function tagFor(tool) {
+  const state = runOf(tool.id);
+  if (state.run) return el('span', { className: 'tag', textContent: `▶ ${since(state.run.startedAt)}` });
+  if (state.starting) return el('span', { className: 'tag', textContent: '…' });
+  if (state.exit && !state.seen && exitText(state.exit).failed) return el('span', { className: 'tag pen', textContent: '停了' });
+  return null;
+}
+
 function renderSubjects() {
-  const locked = Boolean(ui.run) || ui.starting;
   $('subjects').replaceChildren(...ui.tools.map((tool) => {
     const picked = ui.picked?.id === tool.id;
     const name = el('span', { className: picked ? 'hl' : '', textContent: tool.name });
-    return el('button', {
+    const button = el('button', {
       type: 'button',
       className: `subject${tool.ready ? '' : ' missing'}`,
       title: tool.ready ? tool.summary : `没找到：${tool.dir}`,
-      disabled: locked && !picked,
       onclick: () => {
-        if (locked || picked) return;
+        if (picked) return;
         ui.picked = tool;
         ui.invalid.clear();
+        runOf(tool.id).seen = true;
         $('error').textContent = '';
         remember({ picked: tool.id });
-        render();
+        render({ log: true });
         swipe(name);
       },
-      ariaPressed: String(picked),
-    }, name);
+    }, name, tagFor(tool));
+    button.setAttribute('aria-pressed', String(picked));
+    return button;
   }));
-  for (const button of $('subjects').children) button.setAttribute('aria-pressed', button.ariaPressed);
 }
 
 function renderLead() {
@@ -358,7 +385,7 @@ function renderLead() {
     return;
   }
   const tool = ui.picked;
-  if (!tool) { lead.replaceChildren(el('p', { textContent: '选一个平台。' })); return; }
+  if (!tool) { lead.replaceChildren(el('p', { textContent: '选一个平台。三个平台可以同时跑，开始一个之后再切到别的平台接着开。' })); return; }
   if (!tool.ready) {
     lead.replaceChildren(
       el('p', { className: 'pen' }, `没找到${tool.name}：`, el('span', { className: 'path', textContent: tool.dir })),
@@ -462,26 +489,30 @@ function summarize(tool, used) {
   return out.length ? out : ['默认设置'];
 }
 
+/* 切换平台时才重画表单，不然别的平台的日志每来一行，这边填到一半的字就没了 */
+let formFor = '';
 function renderForm() {
   const tool = ui.picked;
-  const show = Boolean(tool && tool.ready && ui.linked && !ui.run);
+  const state = cur();
+  const isRunning = Boolean(state.run);
+  const show = Boolean(tool && tool.ready && ui.linked && !isRunning);
+  const key = show ? tool.id : '';
   $('form').hidden = !show;
-  $('form').replaceChildren(...(show ? tool.options.map((option) => field(tool, option)) : []));
-
-  const running = Boolean(ui.run);
-  $('summary-row').hidden = !running;
-  if (running) {
-    const runTool = toolById(ui.run.tool);
-    $('summary').replaceChildren(...(runTool ? summarize(runTool, ui.run.values || {}) : []));
+  if (key !== formFor) {
+    $('form').replaceChildren(...(show ? tool.options.map((option) => field(tool, option)) : []));
+    formFor = key;
   }
 
+  $('summary-row').hidden = !isRunning;
+  if (isRunning) $('summary').replaceChildren(...summarize(tool, state.run.values || {}));
+
   $('actions').hidden = !(tool && tool.ready && ui.linked);
-  $('start').hidden = running;
-  $('start').disabled = ui.starting;
-  $('start').textContent = ui.starting ? '正在启动…' : '开始';
-  $('stop').hidden = !running;
-  $('stop').disabled = ui.stopping;
-  $('stop').textContent = ui.stopping ? '正在停止…' : '停止';
+  $('start').hidden = isRunning;
+  $('start').disabled = state.starting;
+  $('start').textContent = state.starting ? '正在启动…' : `开始${tool ? `：${tool.name}` : ''}`;
+  $('stop').hidden = !isRunning;
+  $('stop').disabled = state.stopping;
+  $('stop').textContent = state.stopping ? '正在停止…' : `停止：${tool ? tool.name : ''}`;
 }
 
 /* ---------- 运行情况 ---------- */
@@ -504,17 +535,31 @@ function parseLine(entry) {
   return { time: time || clock(entry.at), text: text.trim(), level };
 }
 
-function addLines(entries) {
-  const log = $('log');
-  const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+/* 日志按平台存着；只有选中的平台才画到页面上 */
+function store(id, entries) {
+  const state = runOf(id);
   for (const entry of entries) {
     const line = parseLine(entry);
     if (!line.text) continue;
-    ui.lastLine = line.text;
-    log.append(el('li', { className: line.level },
-      el('time', { textContent: line.time }), el('span', { textContent: line.text })));
+    state.lastLine = line.text;
+    state.lines.push(line);
   }
-  while (log.children.length > 1000) log.firstElementChild.remove();
+  if (state.lines.length > MAX_LOG) state.lines.splice(0, state.lines.length - MAX_LOG);
+}
+
+const item = (line) => el('li', { className: line.level }, el('time', { textContent: line.time }), el('span', { textContent: line.text }));
+
+function drawLog() {
+  const log = $('log');
+  log.replaceChildren(...cur().lines.map(item));
+  log.scrollTop = log.scrollHeight;
+}
+
+function appendLog(lines) {
+  const log = $('log');
+  const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+  for (const line of lines) log.append(item(line));
+  while (log.children.length > MAX_LOG) log.firstElementChild.remove();
   if (stick) log.scrollTop = log.scrollHeight;
 }
 
@@ -534,32 +579,32 @@ function exitText(exit) {
 
 let lastPhase = '';
 function renderRun() {
-  const running = Boolean(ui.run);
-  const hasLog = $('log').children.length > 0;
-  $('run').hidden = !running && !ui.exit && !hasLog;
-  $('note-row').hidden = !running;
+  const state = cur();
+  const isRunning = Boolean(state.run);
+  $('run').hidden = !isRunning && !state.exit && !state.lines.length;
+  $('note-row').hidden = !isRunning;
 
   const status = $('status');
   const text = $('status-text');
   let phase;
-  if (running) {
-    text.textContent = ui.toolStatus || ui.lastLine || '正在启动…';
+  if (isRunning) {
+    text.textContent = state.toolStatus || state.lastLine || '正在启动…';
     status.className = 'status';
-    $('elapsed').textContent = `已运行 ${since(ui.run.startedAt)}`;
-    phase = `run:${ui.run.startedAt}:${ui.toolStatus}`;
-  } else if (ui.exit) {
-    const { text: said, failed } = exitText(ui.exit);
+    $('elapsed').textContent = `已运行 ${since(state.run.startedAt)}`;
+    phase = `run:${ui.picked.id}:${state.run.startedAt}:${state.toolStatus}`;
+  } else if (state.exit) {
+    const { text: said, failed } = exitText(state.exit);
     text.textContent = said;
     status.className = `status ended${failed ? ' failed' : ''}`;
-    $('elapsed').textContent = clock(ui.exit.at);
-    phase = `exit:${ui.exit.at}`;
+    $('elapsed').textContent = clock(state.exit.at);
+    phase = `exit:${state.exit.at}`;
   } else {
     text.textContent = '';
     $('elapsed').textContent = '';
     phase = '';
   }
-  /* 只在阶段变化时重画荧光（开始、工具报新状态），日志一行一行来时不闪 */
-  if (phase !== lastPhase && running) swipe(text);
+  /* 只在阶段变化时重画荧光（开始、工具报新状态、切换平台），日志一行一行来时不闪 */
+  if (phase !== lastPhase && isRunning) swipe(text);
   lastPhase = phase;
 }
 
@@ -573,15 +618,30 @@ function swipe(node) {
 const COLORS = { idle: ['#FAFBFC', '#1E2B4A'], run: ['#F2E35B', '#1E2B4A'], done: ['#1E2B4A', '#1E2B4A'], fail: ['#C2362F', '#C2362F'] };
 let lastIcon = '';
 function reflect() {
+  const live = running();
+  /* 中途停了、还没切过去看的，优先报：红笔比荧光笔要紧 */
+  const failed = ui.tools.find((tool) => {
+    const state = runOf(tool.id);
+    return !state.run && state.exit && !state.seen && exitText(state.exit).failed;
+  });
   let mode = 'idle';
   let title = '网课助手';
-  if (ui.run) {
+  if (live.length === 1) {
     mode = 'run';
-    title = `▶ ${ui.run.name} ${since(ui.run.startedAt)}`;
-  } else if (ui.exit) {
-    const { failed } = exitText(ui.exit);
-    mode = failed ? 'fail' : 'done';
-    title = failed ? `✕ ${ui.exit.name} 停了` : `${ui.exit.name} ${ui.exit.stopped ? '已停止' : '跑完了'}`;
+    title = `▶ ${live[0].name} ${since(runOf(live[0].id).run.startedAt)}`;
+  } else if (live.length > 1) {
+    mode = 'run';
+    title = `▶ ${live.map((tool) => tool.name).join('、')}`;
+  }
+  if (failed) {
+    mode = 'fail';
+    title = `✕ ${failed.name} 停了${live.length ? `（还有 ${live.length} 个在跑）` : ''}`;
+  } else if (!live.length) {
+    const ended = ui.picked && runOf(ui.picked.id).exit;
+    if (ended) {
+      mode = 'done';
+      title = `${ended.name} ${ended.stopped ? '已停止' : '跑完了'}`;
+    }
   }
   if (!ui.linked) { mode = 'fail'; title = '✕ 和启动器断开了'; }
   document.title = title;
@@ -592,20 +652,29 @@ function reflect() {
   $('favicon').href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-function render() {
+function render({ log = false } = {}) {
   renderSubjects();
   renderLead();
   renderForm();
+  if (log) drawLog();
   renderRun();
   reflect();
 }
 
-setInterval(() => { if (ui.run) { $('elapsed').textContent = `已运行 ${since(ui.run.startedAt)}`; reflect(); } }, 1000);
+setInterval(() => {
+  if (!running().length) return;
+  const state = cur();
+  if (state.run) $('elapsed').textContent = `已运行 ${since(state.run.startedAt)}`;
+  renderSubjects();
+  reflect();
+}, 1000);
 
 /* ---------- 开始 / 停止 ---------- */
 async function start() {
   const tool = ui.picked;
-  if (!tool || ui.starting || ui.run) return;
+  if (!tool) return;
+  const state = runOf(tool.id);
+  if (state.starting || state.run) return;
   const picked = values();
   $('error').textContent = '';
 
@@ -613,6 +682,7 @@ async function start() {
     .filter((option) => option.required && !String(picked[keyOf(option)] ?? '').trim())
     .map((option) => option.label));
   if (ui.invalid.size) {
+    formFor = '';
     renderForm();
     $('error').textContent = `还没填：${[...ui.invalid].join('、')}`;
     $('form').querySelector('.margin.wrong')?.closest('.field')?.querySelector('input')?.focus();
@@ -623,9 +693,8 @@ async function start() {
   for (const option of tool.options) if (option.type === 'password') delete kept[keyOf(option)];
   remember({ picked: tool.id, values: { ...(remembered().values || {}), [tool.id]: kept } });
 
-  ui.starting = true;
-  renderForm();
-  renderSubjects();
+  state.starting = true;
+  render();
   try {
     const res = await api('start', {
       method: 'POST',
@@ -635,13 +704,13 @@ async function start() {
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       const missing = /^还没填：(.+)$/.exec(body.error || '');
-      if (missing) ui.invalid = new Set(missing[1].split('、'));
-      ui.starting = false;
+      if (missing) { ui.invalid = new Set(missing[1].split('、')); formFor = ''; }
+      state.starting = false;
       render();
-      $('error').textContent = body.error || `没能启动（HTTP ${res.status}）`;
+      if (ui.picked?.id === tool.id) $('error').textContent = body.error || `没能启动（HTTP ${res.status}）`;
     }
   } catch (e) {
-    ui.starting = false;
+    state.starting = false;
     render();
     $('error').textContent = '连不上启动器，终端窗口还开着吗？';
   }
@@ -653,54 +722,72 @@ $('form').addEventListener('keydown', (event) => {
 });
 $('start').addEventListener('click', start);
 $('stop').addEventListener('click', async () => {
-  ui.stopping = true;
+  const tool = ui.picked;
+  if (!tool) return;
+  const state = runOf(tool.id);
+  state.stopping = true;
   renderForm();
-  try { await api('stop', { method: 'POST' }); } catch (e) { ui.stopping = false; renderForm(); }
+  try {
+    await api('stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tool: tool.id }) });
+  } catch (e) {
+    state.stopping = false;
+    renderForm();
+  }
 });
 
 /* ---------- 实时事件 ---------- */
+function load(id, data) {
+  const state = runOf(id);
+  state.run = data.running ? { startedAt: data.startedAt, values: data.values } : null;
+  state.exit = data.exit;
+  state.toolStatus = data.status || '';
+  state.starting = false;
+  state.stopping = false;
+  state.lastLine = '';
+  state.lines = [];
+  store(id, data.lines || []);
+}
+
 function handle(data) {
   if (data.type === 'state') {
-    ui.run = data.running ? { tool: data.tool, name: data.name, startedAt: data.startedAt, values: data.values } : null;
-    ui.exit = data.exit;
-    ui.toolStatus = data.status || '';
-    ui.starting = false;
-    ui.stopping = false;
-    if (ui.run) ui.picked = toolById(data.tool) || ui.picked;
-    ui.lastLine = '';
-    $('log').replaceChildren();
-    addLines(data.lines || []);
-    render();
+    for (const [id, run] of Object.entries(data.runs || {})) load(id, run);
+    render({ log: true });
     return;
   }
+  const id = data.tool;
+  const state = runOf(id);
+  const shown = ui.picked?.id === id;
   if (data.type === 'started') {
-    ui.run = { tool: data.tool, name: data.name, startedAt: data.startedAt, values: data.values };
-    ui.exit = null;
-    ui.toolStatus = '';
-    ui.lastLine = '';
-    ui.starting = false;
-    $('log').replaceChildren();
-    render();
+    Object.assign(state, blank(), { run: { startedAt: data.startedAt, values: data.values } });
+    if (shown) { $('error').textContent = ''; render({ log: true }); } else { renderSubjects(); reflect(); }
     return;
   }
-  if (data.type === 'status') { ui.toolStatus = data.status; renderRun(); return; }
+  if (data.type === 'status') {
+    state.toolStatus = data.status;
+    if (shown) renderRun();
+    return;
+  }
   if (data.type === 'line') {
-    addLines([data]);
-    if (!ui.toolStatus) $('status-text').textContent = ui.lastLine;
+    const before = state.lines.length;
+    store(id, [data]);
+    if (!shown) return;
+    appendLog(state.lines.slice(before));
     if ($('run').hidden) renderRun();
+    else if (!state.toolStatus && state.run) $('status-text').textContent = state.lastLine;
     return;
   }
   if (data.type === 'exit') {
-    ui.run = null;
-    ui.exit = data;
-    ui.stopping = false;
+    state.run = null;
+    state.exit = data;
+    state.stopping = false;
+    state.seen = shown;
     render();
   }
 }
 
 function connect() {
   const events = new EventSource(`/api/events?${query}`);
-  events.onopen = () => { if (!ui.linked) { ui.linked = true; render(); } };
+  events.onopen = () => { if (!ui.linked) { ui.linked = true; formFor = ''; render(); } };
   events.onerror = () => { if (ui.linked) { ui.linked = false; render(); } };
   events.onmessage = (event) => handle(JSON.parse(event.data));
 }
@@ -718,8 +805,8 @@ if (!first) {
   reflect();
 } else {
   ui.tools = first.tools;
-  const last = remembered().picked;
-  ui.picked = toolById(first.state.running ? first.state.tool : last) || null;
+  const live = Object.values(first.state.runs || {}).find((run) => run.running);
+  ui.picked = toolById(remembered().picked) || toolById(live?.tool) || null;
   render();
   connect();
 }

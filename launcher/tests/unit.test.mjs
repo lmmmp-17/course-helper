@@ -152,16 +152,59 @@ function fakeChild() {
     return child;
 }
 
-test('跑进程：同一时间只允许一个', async () => {
-    const child = fakeChild();
-    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => child });
-    const tool = { ...xxt, dir: '.' };
+test('跑进程：同一个平台只能开一个，不同平台可以同时跑', async () => {
+    const children = [];
+    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => { children.push(fakeChild()); return children.at(-1); } });
     /* locate 会检查目录存在, 这里直接用一个存在的目录 */
-    const ok = { ...tool, dir: '/' , entry: { posix: '.', win32: '.' } };
-    await runner.start(ok, {});
-    await assert.rejects(runner.start(ok, {}), /还在跑/);
-    child.emit('close', 0, null);
-    assert.equal(runner.state().running, false);
+    const here = { dir: '/', entry: { posix: '.', win32: '.' } };
+    const a = { ...xxt, ...here };
+    const b = { ...byId('yuketang'), ...here };
+    await runner.start(a, {});
+    await assert.rejects(runner.start(a, {}), /已经在跑了/);
+    await runner.start(b, {});
+    assert.deepEqual(runner.running(), ['xuexitong', 'yuketang']);
+
+    /* 各管各的：停一个不影响另一个 */
+    assert.equal(runner.stop('xuexitong'), true);
+    assert.equal(children[0].signal, 'SIGINT');
+    assert.equal(children[1].killed, false);
+    children[0].emit('close', null, 'SIGINT');
+    assert.equal(runner.toolState('xuexitong').running, false);
+    assert.equal(runner.toolState('yuketang').running, true);
+    assert.deepEqual(Object.keys(runner.state().runs), ['xuexitong', 'yuketang']);
+
+    /* 不指定就全停（退出启动器时） */
+    assert.equal(runner.stop(), true);
+    assert.equal(children[1].signal, 'SIGINT');
+});
+
+test('跑进程：连点两下开始，只起一个', async () => {
+    let spawned = 0;
+    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => { spawned += 1; return fakeChild(); } });
+    const tool = { ...xxt, dir: '/', entry: { posix: '.', win32: '.' } };
+    const results = await Promise.allSettled([runner.start(tool, {}), runner.start(tool, {})]);
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+    assert.equal(spawned, 1);
+});
+
+test('跑进程：每一条事件都带着是哪个平台', async () => {
+    const children = [];
+    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => { children.push(fakeChild()); return children.at(-1); } });
+    const seen = [];
+    runner.onEvent((event) => seen.push(event));
+    const here = { dir: '/', entry: { posix: '.', win32: '.' } };
+    await runner.start({ ...xxt, ...here }, {});
+    await runner.start({ ...byId('yuketang'), ...here }, {});
+    children[1].stdout.emit('data', '雨课堂的一行\n[[status]] 学到第 2 项\n');
+    children[0].stdout.emit('data', '学习通的一行\n');
+    children[0].emit('close', 0, null);
+    assert.deepEqual(seen.map((e) => [e.type, e.tool]), [
+        ['started', 'xuexitong'], ['started', 'yuketang'],
+        ['line', 'yuketang'], ['status', 'yuketang'],
+        ['line', 'xuexitong'], ['exit', 'xuexitong'],
+    ]);
+    assert.equal(runner.toolState('yuketang').status, '学到第 2 项');
+    assert.equal(runner.toolState('xuexitong').status, '', '状态不串到别的平台');
 });
 
 test('跑进程：输出按行切，[[status]] 单独走状态而不混进日志', async () => {
@@ -177,9 +220,9 @@ test('跑进程：输出按行切，[[status]] 单独走状态而不混进日志
     const lines = seen.filter((e) => e.type === 'line').map((e) => e.line);
     assert.deepEqual(lines, ['第一行', '第二行']);
     assert.equal(seen.filter((e) => e.type === 'status').at(-1).status, '正在播放 1/3');
-    assert.equal(runner.state().status, '正在播放 1/3');
-    assert.equal(runner.state().lines.some((e) => e.line.includes('[[status]]')), false, '状态不该混进日志');
-    assert.equal(typeof runner.state().lines[0].at, 'number', 'Autovisor 的行里没时间，要自己记');
+    assert.equal(runner.toolState('xuexitong').status, '正在播放 1/3');
+    assert.equal(runner.toolState('xuexitong').lines.some((e) => e.line.includes('[[status]]')), false, '状态不该混进日志');
+    assert.equal(typeof runner.toolState('xuexitong').lines[0].at, 'number', 'Autovisor 的行里没时间，要自己记');
 });
 
 test('跑进程：stderr 的行标出来，退出后日志还留着', async () => {
@@ -189,7 +232,7 @@ test('跑进程：stderr 的行标出来，退出后日志还留着', async () =
     child.stdout.emit('data', '普通\n');
     child.stderr.emit('data', '出错了\n');
     child.emit('close', 1, null);
-    const after = runner.state();
+    const after = runner.toolState('xuexitong');
     assert.equal(after.running, false);
     assert.deepEqual(after.lines.map((e) => [e.line, e.err]), [['普通', false], ['出错了', true]]);
     assert.equal(after.exit.code, 1);
@@ -200,10 +243,10 @@ test('跑进程：点停止之后退出，要能看出是手动停的', async ()
     const child = fakeChild();
     const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => child });
     await runner.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
-    assert.equal(runner.stop(), true);
+    assert.equal(runner.stop('xuexitong'), true);
     assert.equal(child.signal, 'SIGINT', '先温和地停');
     child.emit('close', null, 'SIGINT');
-    assert.equal(runner.state().exit.stopped, true);
+    assert.equal(runner.toolState('xuexitong').exit.stopped, true);
 });
 
 test('跑进程：Windows 上按进程树结束，不然 node / python 会留在后台接着播', async () => {
@@ -214,7 +257,7 @@ test('跑进程：Windows 上按进程树结束，不然 node / python 会留在
         spawnProcess: (command, args) => { calls.push([command, args]); return calls.length === 1 ? child : fakeChild(); },
     });
     await runner.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
-    runner.stop();
+    runner.stop('xuexitong');
     assert.deepEqual(calls[1], ['taskkill', ['/pid', '4242', '/T', '/F']]);
     assert.equal(child.killed, false, '不该只结束 cmd.exe');
 });
@@ -226,7 +269,7 @@ test('跑进程：界面能看到这次用了什么设置，但看不到密码',
         await writeFile(join(dir, 'run.sh'), '#!/bin/sh\n', 'utf8');
         const runner = createRunner({ root: dir, platform: 'linux', spawnProcess: () => fakeChild() });
         await runner.start({ ...zhs, dir: '.' }, { 'course-url.URL1': 'https://x', 'user-account.password': 'secret' });
-        assert.equal(runner.state().values['course-url.URL1'], 'https://x');
+        assert.equal(runner.toolState('autovisor').values['course-url.URL1'], 'https://x');
         assert.equal(JSON.stringify(runner.state()).includes('secret'), false);
     } finally {
         await rm(dir, { recursive: true, force: true });

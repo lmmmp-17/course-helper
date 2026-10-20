@@ -1,0 +1,4 @@
+# 本机覆盖工具路径用的，见 launcher/README.md
+launcher/tools.local.json
+node_modules
+*.log

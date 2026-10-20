@@ -2,8 +2,8 @@
 setlocal
 for /f "tokens=2 delims=:." %%c in ('chcp') do set "OLDCP=%%c"
 chcp 65001 >nul
-rem 网课助手（统一启动器）的入口（Windows）：双击运行即可。
-rem 会开一个本地控制台，并用你的默认浏览器打开它。
+rem 网课助手的入口（Windows）：双击运行即可。
+rem 会开一个本地控制台，并用你的默认浏览器打开它；三个平台都在里面启动。
 cd /d "%~dp0"
 
 set "PAUSE_AT_END="
@@ -17,7 +17,7 @@ if errorlevel 1 goto :fail
 for /f %%v in ('node -p "parseInt(process.versions.node)"') do set "NODE_MAJOR=%%v"
 if %NODE_MAJOR% LSS 20 goto :old_node
 
-node run.mjs %*
+node launcher\run.mjs %*
 set "CODE=%errorlevel%"
 goto :end
 

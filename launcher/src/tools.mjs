@@ -52,8 +52,9 @@ export const TOOLS = [
         id: 'xuexitong',
         name: '学习通',
         summary: '真实浏览器播放课程视频，按任务点跳过已完成的小节',
-        /* 相对本项目的位置。用户把仓库放在别处时可以在界面上改 */
-        dir: '../../xuexitongScript',
+        /* 相对 launcher/ 的位置：合并仓库里三个工具和 launcher 是平级的子目录。
+         * 放在别处时用 tools.local.json 改 */
+        dir: '../xuexitong',
         entry: { win32: 'start.cmd', posix: './start.sh' },
         kind: 'flags',
         /* 开始之后要用户做什么，直接显示在界面上 */
@@ -115,7 +116,7 @@ export const TOOLS = [
         id: 'autovisor',
         name: '智慧树',
         summary: '自动播放课程视频、处理课中弹题',
-        dir: '../Autovisor',
+        dir: '../autovisor',
         entry: { win32: 'run.cmd', posix: './run.sh' },
         kind: 'config',
         /* 配置写进这个文件；按平台取不同的文件名，和它自己的入口脚本一致 */
