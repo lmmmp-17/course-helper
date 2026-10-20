@@ -152,6 +152,8 @@ function fakeChild() {
     child.stderr = new EventEmitter();
     child.killed = false;
     child.kill = (signal) => { child.killed = true; child.signal = signal; };
+    child.stdinEnded = false;
+    child.stdin = { end() { child.stdinEnded = true; } };
     return child;
 }
 
@@ -169,8 +171,8 @@ test('跑进程：同一个平台只能开一个，不同平台可以同时跑',
 
     /* 各管各的：停一个不影响另一个 */
     assert.equal(runner.stop('xuexitong'), true);
-    assert.equal(children[0].signal, 'SIGINT');
-    assert.equal(children[1].killed, false);
+    assert.equal(children[0].stdinEnded, true, '关掉 stdin 就是让它停');
+    assert.equal(children[1].stdinEnded, false);
     children[0].emit('close', null, 'SIGINT');
     assert.equal(runner.toolState('xuexitong').running, false);
     assert.equal(runner.toolState('yuketang').running, true);
@@ -178,7 +180,7 @@ test('跑进程：同一个平台只能开一个，不同平台可以同时跑',
 
     /* 不指定就全停（退出启动器时） */
     assert.equal(runner.stop(), true);
-    assert.equal(children[1].signal, 'SIGINT');
+    assert.equal(children[1].stdinEnded, true);
 });
 
 test('跑进程：连点两下开始，只起一个', async () => {
@@ -247,37 +249,62 @@ test('跑进程：点停止之后退出，要能看出是手动停的', async ()
     const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => child });
     await runner.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
     assert.equal(runner.stop('xuexitong'), true);
-    assert.equal(child.signal, 'SIGINT', '先温和地停');
+    assert.equal(child.stdinEnded, true, '先温和地停：关 stdin，工具当成 Ctrl+C 自己收尾');
+    assert.equal(child.killed, false, '不再发 SIGINT：和 stdin 一起到的话 Autovisor 会被中断两次');
     child.emit('close', null, 'SIGINT');
     assert.equal(runner.toolState('xuexitong').exit.stopped, true);
 });
 
-test('跑进程：SIGINT 之后 8 秒还没退出就强制结束', async (t) => {
+test('跑进程：关 stdin 8 秒后还没退出，就按进程组强制结束', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
-    const child = Object.assign(fakeChild(), { exitCode: null, signalCode: null });
-    const sent = [];
-    child.kill = (signal) => { sent.push(signal); child.killed = true; };
-    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => child });
+    const child = Object.assign(fakeChild(), { pid: 321, exitCode: null, signalCode: null });
+    const killed = [];
+    let options = null;
+    const runner = createRunner({
+        root: '/tmp', platform: 'linux',
+        spawnProcess: (command, args, opts) => { options = opts; return child; },
+        killProcess: (pid, signal) => killed.push([pid, signal]),
+    });
     await runner.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
+    assert.equal(options.detached, true, '工具在自己的进程组里，才能按组结束');
+    assert.deepEqual(options.stdio, ['pipe', 'pipe', 'pipe']);
+    assert.equal(options.env.PYTHONUTF8, '1', '中文 Windows 上 Python 往管道写默认是 cp936');
+    assert.equal(options.env.PYTHONIOENCODING, 'utf-8');
     runner.stop('xuexitong');
     t.mock.timers.tick(7999);
-    assert.deepEqual(sent, ['SIGINT']);
+    assert.deepEqual(killed, []);
     t.mock.timers.tick(1);
-    assert.deepEqual(sent, ['SIGINT', 'SIGKILL'], 'killed 发完 SIGINT 就是 true，不能拿它判断进程退没退');
+    assert.deepEqual(killed, [[-321, 'SIGKILL']], 'uv、python、浏览器一个不落');
 
-    /* 已经自己退出了的，就不再补一刀 */
-    const quiet = Object.assign(fakeChild(), { exitCode: null, signalCode: null });
-    const quietSent = [];
-    quiet.kill = (signal) => { quietSent.push(signal); quiet.killed = true; };
-    const other = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => quiet });
+    /* 自己按时退出了就不补刀 */
+    const quiet = Object.assign(fakeChild(), { pid: 9, exitCode: null, signalCode: null });
+    const quietKilled = [];
+    const other = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => quiet, killProcess: (...a) => quietKilled.push(a) });
     await other.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
     other.stop('xuexitong');
     quiet.exitCode = 0;
     t.mock.timers.tick(8000);
-    assert.deepEqual(quietSent, ['SIGINT']);
+    assert.deepEqual(quietKilled, []);
 });
 
-test('跑进程：Windows 上先关窗口、几秒后再强制结束整棵进程树', async (t) => {
+test('跑进程：退出启动器时等在跑的工具收完尾', async () => {
+    const children = [];
+    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => { children.push(fakeChild()); return children.at(-1); } });
+    const here = { dir: '/', entry: { posix: '.', win32: '.' } };
+    assert.equal(await runner.whenIdle(10), true, '没在跑的直接返回');
+    await runner.start({ ...xxt, ...here }, {});
+    await runner.start({ ...byId('yuketang'), ...here }, {});
+    runner.stop();
+    const idle = runner.whenIdle(1000);
+    children[0].emit('close', 0, null);
+    setTimeout(() => children[1].emit('close', 0, null), 20);
+    assert.equal(await idle, true);
+    assert.deepEqual(runner.running(), []);
+    await runner.start({ ...xxt, ...here }, {});
+    assert.equal(await runner.whenIdle(30), false, '超时了就不等了');
+});
+
+test('跑进程：Windows 上关 stdin，8 秒后还在才强制结束整棵进程树', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const calls = [];
     const child = Object.assign(fakeChild(), { pid: 4242, exitCode: null, signalCode: null });
@@ -300,12 +327,16 @@ test('跑进程：Windows 上先关窗口、几秒后再强制结束整棵进程
     assert.equal(options.shell, undefined);
     assert.equal(options.env.COURSE_UI, '1', '.cmd 入口据此不在结尾 pause');
 
+    assert.equal(options.env.PYTHONUTF8, '1');
     runner.stop('xuexitong');
-    /* 先不带 /F：给窗口发关闭消息，智慧树的 Edge 关掉后 Playwright 会自己清理临时 profile */
-    assert.deepEqual(calls[1].slice(0, 2), ['taskkill', ['/pid', '4242', '/T']]);
+    /* 不再先发不带 /F 的 taskkill /T：Edge 没窗口的子进程只能强杀，整条链都被拒（pc 实测） */
+    assert.equal(child.stdinEnded, true);
+    assert.equal(calls.length, 1);
+    t.mock.timers.tick(7999);
+    assert.equal(calls.length, 1);
+    t.mock.timers.tick(1);
+    assert.deepEqual(calls[1].slice(0, 2), ['taskkill', ['/pid', '4242', '/T', '/F']], '收不了尾的再强制结束整棵树');
     assert.equal(child.killed, false, '不该只结束 cmd.exe');
-    t.mock.timers.tick(5000);
-    assert.deepEqual(calls[2].slice(0, 2), ['taskkill', ['/pid', '4242', '/T', '/F']], '关不掉的（命令行进程）再强制结束');
 });
 
 test('跑进程：Windows 上已经自己退出了，就不再强制结束', async (t) => {
@@ -322,8 +353,8 @@ test('跑进程：Windows 上已经自己退出了，就不再强制结束', asy
     await runner.start({ ...xxt, dir, entry: { posix: '.', win32: 'start.cmd' } }, {});
     runner.stop('xuexitong');
     child.exitCode = 0;
-    t.mock.timers.tick(5000);
-    assert.equal(calls.length, 2);
+    t.mock.timers.tick(8000);
+    assert.equal(calls.length, 1, '自己收完尾退出了，就不用 taskkill');
 });
 
 test('Windows 命令行：带 cmd 特殊字符的参数一律拒绝', () => {

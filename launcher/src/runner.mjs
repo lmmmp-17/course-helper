@@ -14,7 +14,8 @@ import { entryFor, locate, configPath } from './tools.mjs';
 /* 工具用 [[status]] 前缀单独报"当前在干什么"，其余都是普通日志。
  * 没有这个前缀时界面就只显示原始输出，功能照常。 */
 const STATUS_PREFIX = '[[status]] ';
-const WINDOWS_GRACE_MS = 5000;
+/* 关掉 stdin 之后等工具自己收尾的时间，过了还在就强制结束整棵进程树 */
+export const STOP_GRACE_MS = 8000;
 
 /* Windows 上 .cmd 只能经 cmd.exe 启动。以前用 spawn(…, args, { shell: true })，Node 会
  * 把参数原样拼进命令行，新版 Node 已经把这种用法标成弃用（DEP0190）。这里自己拼：
@@ -30,7 +31,7 @@ export function windowsCommand(script, args) {
 }
 const MAX_LINES = 400;
 
-export function createRunner({ root, platform = process.platform, spawnProcess = spawn } = {}) {
+export function createRunner({ root, platform = process.platform, spawnProcess = spawn, killProcess = process.kill } = {}) {
     /* 按工具记：正在跑的那个进程，和上一次是怎么停的（刷新页面也能看到） */
     const runs = new Map();
     const listeners = new Set();
@@ -121,35 +122,63 @@ export function createRunner({ root, platform = process.platform, spawnProcess =
         return name;
     }
 
+    /* 宽限期过了还没退出：强制结束整棵进程树 */
+    function killTree(child) {
+        if (platform === 'win32') {
+            spawnProcess('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }).on?.('error', () => {});
+            return;
+        }
+        /* POSIX 上工具是在自己的进程组里起的（detached），按组结束，uv、python、浏览器一个不落 */
+        try {
+            killProcess(-child.pid, 'SIGKILL');
+        } catch (e) {
+            child.kill('SIGKILL');
+        }
+    }
+
     function stopOne(run) {
         const { current } = run;
         if (!current) return false;
+        if (current.stopping) return true;
         current.stopping = true;
         const { child } = current;
-        if (platform === 'win32') {
-            /* Windows 上入口是经 cmd.exe 起的，kill 只结束 cmd.exe，真正干活的
-             * node / python 会留在后台接着播，只能按进程树结束。
-             * 先不带 /F：它给进程树里的窗口发关闭消息。智慧树的 Edge 这样关掉，
-             * Playwright 会自己删掉临时 profile，程序也正常收尾；带 /F 直接杀，
-             * %TEMP% 里每停一次就留下一个 playwright_chromiumdev_profile-*（实测）。
-             * 命令行进程没有窗口，关不掉，过几秒再带 /F 强制结束整棵树。 */
-            const tree = ['/pid', String(child.pid), '/T'];
-            spawnProcess('taskkill', tree, { windowsHide: true }).on?.('error', () => {});
-            setTimeout(() => {
-                if (child.exitCode === null && child.signalCode === null) {
-                    spawnProcess('taskkill', [...tree, '/F'], { windowsHide: true }).on?.('error', () => {});
-                }
-            }, WINDOWS_GRACE_MS).unref?.();
-            return true;
+        /* 统一的停止信号：关掉子进程的 stdin。三个工具在 COURSE_UI=1 时把它当成 Ctrl+C，
+         * 自己收尾：关浏览器连接、打印总结，智慧树的 Playwright 也会删掉临时目录。
+         *
+         * 以前 Windows 上只能按进程树强杀：入口隔着 cmd.exe，发不了 Ctrl+C；不带 /F 的
+         * taskkill /T 也不行，Edge 的渲染、GPU 子进程没有窗口只能强杀，taskkill 从叶子往根
+         * 处理，整条链都被拒，Edge 的窗口根本收不到关闭（pc 实测）。POSIX 上也不再发 SIGINT：
+         * 和 stdin 一起到的话，Autovisor 会收到两次中断，第二次打断正在进行的收尾。 */
+        try {
+            child.stdin?.end();
+        } catch (e) {
+            /* 已经关了 */
         }
-        /* 先温和地停：两个 Node 工具收到 SIGINT 会自己收尾。8 秒后还没退出就强制结束。
-         * 判断要看 exitCode / signalCode：child.killed 只表示信号发出去了，
-         * 发完 SIGINT 它就是 true，拿它判断的话强制结束永远不会发生。 */
-        child.kill('SIGINT');
+        /* 判断要看 exitCode / signalCode：child.killed 只表示信号发出去过 */
         setTimeout(() => {
-            if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-        }, 8000).unref?.();
+            if (child.exitCode === null && child.signalCode === null) killTree(child);
+        }, STOP_GRACE_MS).unref?.();
         return true;
+    }
+
+    /* 所有在跑的都退出了，或者超时，就返回（退出启动器时等工具收完尾再走） */
+    function whenIdle(timeoutMs) {
+        return new Promise((resolve) => {
+            let timer = null;
+            const off = (() => {
+                const listener = () => check();
+                listeners.add(listener);
+                return () => listeners.delete(listener);
+            })();
+            function check() {
+                if ([...runs.values()].some((run) => run.current)) return;
+                off();
+                clearTimeout(timer);
+                resolve(true);
+            }
+            timer = setTimeout(() => { off(); resolve(false); }, timeoutMs);
+            check();
+        });
     }
 
     return {
@@ -183,10 +212,20 @@ export function createRunner({ root, platform = process.platform, spawnProcess =
                 const entry = entryFor(tool, platform);
                 /* 让工具知道输出要给界面看：状态行改成 [[status]] 单独一行；
                  * Windows 的 .cmd 入口据此也不在结尾 pause（stdin 是管道，会一直等下去） */
-                const env = { ...process.env, COURSE_UI: '1' };
+                const env = {
+                    ...process.env,
+                    COURSE_UI: '1',
+                    /* 中文 Windows 上 Python 往管道写用的是 cp936，这边按 UTF-8 解码就成了乱码
+                     * （pc 实测智慧树的日志全是乱码）。和控制台是不是 65001 无关 */
+                    PYTHONUTF8: '1',
+                    PYTHONIOENCODING: 'utf-8',
+                };
+                /* stdin 留成管道：关掉它就是让工具停（见 stopOne） */
+                const stdio = ['pipe', 'pipe', 'pipe'];
                 child = platform === 'win32'
-                    ? spawnProcess(...windowsCommand(resolve(dir, entry), args), { cwd: dir, env, windowsVerbatimArguments: true })
-                    : spawnProcess(entry, args, { cwd: dir, env });
+                    ? spawnProcess(...windowsCommand(resolve(dir, entry), args), { cwd: dir, env, stdio, windowsVerbatimArguments: true })
+                    /* 自己一个进程组：强制结束时按组杀；终端里的 Ctrl+C 也不会越过启动器直接打到工具上 */
+                    : spawnProcess(entry, args, { cwd: dir, env, stdio, detached: true });
             } finally {
                 run.pending = false;
             }
@@ -228,5 +267,7 @@ export function createRunner({ root, platform = process.platform, spawnProcess =
         running() {
             return [...runs.values()].filter((run) => run.current).map((run) => run.tool.id);
         },
+
+        whenIdle,
     };
 }

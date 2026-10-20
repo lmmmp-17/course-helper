@@ -6,7 +6,7 @@
  * ------------------------------------------------------------------ */
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import { createRunner } from './src/runner.mjs';
+import { createRunner, STOP_GRACE_MS } from './src/runner.mjs';
 import { startServer } from './src/server.mjs';
 import { openInBrowser } from './src/open.mjs';
 
@@ -62,9 +62,16 @@ async function main() {
     console.log('按 Ctrl+C 退出（正在跑的工具会全部停掉）。');
 
     await new Promise((done) => {
-        const bye = () => {
-            console.log('\n正在退出…');
+        let leaving = false;
+        const bye = async () => {
+            /* 再按一次 Ctrl+C：不等了 */
+            if (leaving) process.exit(1);
+            leaving = true;
+            const live = runner.running();
+            console.log(live.length ? `\n正在停止 ${live.length} 个在跑的工具，等它们收尾…（再按一次 Ctrl+C 直接退出）` : '\n正在退出…');
             runner.stop();
+            /* 等工具收完尾再走：启动器先退的话，工具收尾时往已经关掉的管道里写日志会出错 */
+            await runner.whenIdle(STOP_GRACE_MS + 2000);
             server.close().finally(done);
         };
         process.on('SIGINT', bye);
