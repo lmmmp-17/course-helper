@@ -249,8 +249,12 @@ async def main(config, wait_course: bool = False) -> bool:
         # 登录完成、每门课结束、退出时都会保存 Cookie, 统一在这里按模式开关
         set_cookie_persistence(not session.attached)
         monitor_task = None
+        # 登录完成之前不落盘: 没登录就停了的话, 浏览器里只有 passport 的匿名 Cookie,
+        # 存下来下次就会白白校验 13 秒, 再报一条"Cookies 已失效"(pc 实测)
+        logged_in = False
         try:
             login_by_cookie = await ensure_login(context, page, cookies, config, modules)
+            logged_in = True
 
             logger.context(登录方式="Cookie" if login_by_cookie else "账号")
             tasks.extend(
@@ -337,7 +341,7 @@ async def main(config, wait_course: bool = False) -> bool:
             if monitor_task:
                 await asyncio.gather(monitor_task, return_exceptions=True)
             try:
-                if not session.attached:
+                if logged_in and not session.attached:
                     await persist_login_cookies(context)
             except Exception as exc:
                 # 浏览器已经被关掉时存不了 Cookie 是必然的, 不是错误;
