@@ -33,7 +33,7 @@
 - `kind: 'flags'`：选项通过命令行参数传（学习通、雨课堂这种）
 - `kind: 'config'`：选项写进配置文件，再运行入口脚本（Autovisor 这种）
 
-选项可以按平台限制（`platforms`），单选里的某一项也可以（比如 Chromium 只在 Linux 上出现），默认值也可以按平台给（`platformDefault`）。
+选项可以按平台限制（`platforms`），单选里的某一项也可以（比如 Chromium 只在 Linux 上出现），默认值也可以按平台给（`platformDefault`）。每次启动都要带的参数写在 `fixedArgs`（智慧树带 `--wait-course`：不用配置里的课程地址，等你在浏览器里点开课程，和另外两个平台一样）。
 
 新工具要和别的一起跑，得保证它不和已有的抢东西：浏览器的用户目录、调试端口（已经用了 9222 / 9223 / 9224）。
 
@@ -69,7 +69,13 @@
 
 工具输出里以 `[[status]] ` 开头的行会被当成「当前在干什么」单独显示，其余按日志走。工具没有这个前缀时界面就拿最新一行日志当状态，功能照常。
 
-Windows 上入口是 `.cmd`，要经过 `cmd.exe` 启动，直接结束子进程只会结束外层的 `cmd.exe`，真正在播的 node / python 会留在后台。所以「停止」用 `taskkill /T /F` 连整个进程树一起结束，代价是工具来不及打印收尾总结。Linux / macOS 上先发 SIGINT 让工具自己收尾，8 秒后还在就强制结束。
+Windows 上入口是 `.cmd`，要经过 `cmd.exe` 启动：
+
+- 启动时自己拼 `cmd.exe /d /s /c ""入口" "参数"…"`，不用 `shell: true` 加参数数组（新版 Node 标成弃用，DEP0190）。参数只来自登记表和界面选项，带 cmd 特殊字符的一律拒绝。
+- 直接结束子进程只会结束外层的 `cmd.exe`，真正在播的 node / python 会留在后台，所以「停止」按进程树结束。先 `taskkill /T`（不带 `/F`）给树里的窗口发关闭消息：智慧树的 Edge 这样关掉，Playwright 会自己删掉临时 profile；直接 `/F` 的话 `%TEMP%` 里每停一次就留下一个 `playwright_chromiumdev_profile-*`（实测）。5 秒后还没退出的（命令行进程没有窗口可关）再 `taskkill /T /F`。
+- 入口脚本看到 `COURSE_UI=1` 就不在结尾 `pause`：控制台给它的 stdin 是一直开着的管道，`pause` 会永远等下去，界面上就一直显示「在跑」（实测）。
+
+Linux / macOS 上先发 SIGINT 让工具自己收尾，8 秒后还在就强制结束。
 
 ## 测试
 
@@ -82,5 +88,5 @@ node --test launcher/tests/unit.test.mjs
 ## 还没做的
 
 - 三个工具还没有发 `[[status]]`，所以状态目前靠最新一行日志顶着。
-- Windows 上的「停止」还没实测过整个进程树是否都结束了；Windows 上的并行也还没测过。
+- Windows 上并行和 `taskkill /T /F` 停止已经实测通过；改成先 `/T` 再 `/F` 之后还没在 Windows 上复测。
 - ZHS（另一个智慧树项目）还没进登记表：它不开浏览器，是直接伪造观看记录的，和这三个路子不一样，要不要放进来再定。
