@@ -6,6 +6,6 @@
   "description": "把三个网课工具收到一个本地控制台里",
   "scripts": {
     "start": "node run.mjs",
-    "test": "node --test tests/unit.test.mjs tests/backend.test.mjs"
+    "test": "node --test tests/unit.test.mjs tests/backend.test.mjs tests/tui.test.mjs"
   }
 }

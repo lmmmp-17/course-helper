@@ -1,16 +1,39 @@
 # 控制台（launcher）
 
-网课助手的本地控制台：一个只绑 `127.0.0.1` 的小 HTTP 服务，加一个静态页面。三个平台在这里启动、停止、看进度，可以同时跑。**怎么用见仓库根目录的 [README](../README.md#一初级使用教程)**，这里讲它怎么做的、怎么改。
+网课助手的控制台：三个平台在这里启动、停止、看进度，可以同时跑。**怎么用见仓库根目录的 [README](../README.md#一初级使用教程)**，这里讲它怎么做的、怎么改。
 
 没有任何 npm 依赖，需要 Node.js 20 或更新。入口是仓库根目录的 `start.cmd` / `start.sh`，也可以直接 `node launcher/run.mjs`。
+
+几种界面共用同一个后端（`src/runner.mjs`）和同一份设置：
+
+| 界面 | 怎么进 | 说明 |
+| --- | --- | --- |
+| 终端版（TUI） | 在终端里运行时默认就是它，也可以 `--tui` | `src/tui/`，直接在进程里调用 runner，不走 HTTP |
+| 浏览器版 | `--web`（不在终端里运行时也走这个） | 本地 HTTP 服务 + `public/index.html` |
+| 窗口版 | `--handshake`，由 Windows 外壳启动 | 和浏览器版同一个页面，装在独立窗口里（开发中） |
 
 ## 命令行参数
 
 | 参数 | 作用 |
 | --- | --- |
-| `--port <端口>` | 指定本地端口，默认随机 |
-| `--no-open` | 不自动打开浏览器，只打印地址 |
+| `--tui` / `--web` | 选界面，见上表 |
+| `--port <端口>` | 浏览器版的本地端口，默认随机 |
+| `--no-open` | 浏览器版不自动打开浏览器，只打印地址 |
+| `--handshake` | 给窗口版外壳用：stdout 只打一行 JSON（`{ready, url}`，或者被占用时 `{ready:false, error:'locked', holder}`），stdin 关掉就停掉所有工具再退出 |
 | `--help` | 显示说明 |
+
+## 共享设置和锁
+
+- **`src/settings.mjs`**：上次选的平台、每个平台填过的值（不存密码），放在系统的用户配置目录：Windows `%APPDATA%\course-helper\settings.json`，Linux `$XDG_CONFIG_HOME/course-helper/`（默认 `~/.config`），macOS `~/Library/Application Support/course-helper/`。工具启动成功时写入。预填的优先级：工具自己的配置文件 > 这里记的 > 登记表默认值。
+- **`src/lock.mjs`**：同一时间只能有一个后端，不然同一个平台会被启动两次、抢同一个专用浏览器。锁文件 `launcher.lock` 放在同一目录，记着是谁占着（`gui` / `tui` / `web`）；占锁的进程已经不在了就当作失效、直接接手。
+
+## 终端版
+
+- `src/tui/width.mjs`：按 East Asian Width 算显示宽度，中文占两列；按宽度截断、折行。
+- `src/tui/screen.mjs`：备用屏幕、raw 模式、按键解析、整帧绘制。每一行用绝对位置写、写完清到行尾，并关掉自动换行，宽度算错也只会截掉，不会串行。任何方式退出都先恢复终端。
+- `src/tui/app.mjs`：状态、按键和「这一帧长什么样」，不碰终端，测试直接喂按键、读画面。
+- 装饰只用 ASCII（`[x]`、`(o)`、`>`、`...`）：箭头、▶、框线字符和「…」在中文 Windows 控制台里是两列宽。
+- 日志、结束原因、已运行时长的说法在 `src/present.mjs`；浏览器版的页面里有一份同样的逻辑，改说法时两边一起改。
 
 ## 工具目录放在别处
 
@@ -80,10 +103,14 @@ Linux / macOS 上先发 SIGINT 让工具自己收尾，8 秒后还在就强制�
 ## 测试
 
 ```bash
-node --test launcher/tests/unit.test.mjs
+node --test launcher/tests/unit.test.mjs launcher/tests/backend.test.mjs launcher/tests/tui.test.mjs
 ```
 
-不需要浏览器：参数拼装、配置文件合并、打开浏览器的命令、跑进程的状态机（包括几个工具同时跑、连点两下、事件归属）。
+不需要浏览器，也不碰真实的工具目录（智慧树启动前会改写它自己的配置文件，测试一律用临时目录）：
+
+- `unit.test.mjs`：参数拼装、配置文件合并、打开浏览器的命令、跑进程的状态机（几个工具同时跑、连点两下、事件归属、停止和强制结束）。
+- `backend.test.mjs`：共享设置、锁、用真实子进程测的握手。
+- `tui.test.mjs`：显示宽度、按键解析、终端版的状态机。
 
 ## 还没做的
 

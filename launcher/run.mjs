@@ -4,7 +4,8 @@
  *
  * 零依赖，只用 Node 自带的东西。几种界面共用同一个后端和同一份设置
  * （settings.mjs），同一时间只能开一个（lock.mjs）：
- *   --web        在默认浏览器里打开控制台（排错用）
+ *   （默认）     在终端里运行时是终端版界面（TUI）
+ *   --web        在默认浏览器里打开控制台（排错用；不在终端里运行时也走这个）
  *   --handshake  给 Windows 窗口版外壳用：只往 stdout 打一行 JSON，
  *                stdin 关掉就停掉所有工具再退出
  * 退出时会把正在跑的工具一起停掉，等它们收完尾再走。
@@ -16,16 +17,18 @@ import { startServer } from './src/server.mjs';
 import { openInBrowser } from './src/open.mjs';
 import { createSettings } from './src/settings.mjs';
 import { acquireLock, describeHolder } from './src/lock.mjs';
+import { runTui } from './src/tui/app.mjs';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 
 function parse(argv) {
-    const options = { port: 0, open: true, handshake: false };
+    const options = { port: 0, open: true, handshake: false, ui: null };
     for (let i = 0; i < argv.length; i += 1) {
         if (argv[i] === '--port') { options.port = Number(argv[i + 1]) || 0; i += 1; continue; }
         if (argv[i] === '--no-open') { options.open = false; continue; }
-        if (argv[i] === '--web') { continue; }
-        if (argv[i] === '--handshake') { options.handshake = true; options.open = false; continue; }
+        if (argv[i] === '--web') { options.ui = 'web'; continue; }
+        if (argv[i] === '--tui') { options.ui = 'tui'; continue; }
+        if (argv[i] === '--handshake') { options.handshake = true; options.ui = 'gui'; options.open = false; continue; }
         if (argv[i] === '--help' || argv[i] === '-h') { options.help = true; continue; }
         throw new Error(`无法识别的参数: ${argv[i]}`);
     }
@@ -36,10 +39,12 @@ const HELP = `
 网课助手
 
 用法
-  Windows：双击 网课助手.exe（窗口版）；Linux / macOS：./start.sh
+  Windows：双击 网课助手.exe（窗口版），或者 start.cmd（终端版）
+  Linux / macOS：./start.sh（终端版）
   或者：node launcher/run.mjs [选项]
 
 选项
+  --tui           终端版（在终端里运行时默认就是它）
   --web           在你的默认浏览器里打开控制台
   --port <端口>   指定本地端口，默认随机
   --no-open       不自动打开浏览器，只打印地址
@@ -52,13 +57,15 @@ const HELP = `
 async function main() {
     const options = parse(process.argv.slice(2));
     if (options.help) { console.log(HELP); return 0; }
+    /* 没指定界面：在终端里就用终端版，否则（比如输出被重定向）用浏览器版 */
+    const ui = options.ui || (process.stdin.isTTY && process.stdout.isTTY ? 'tui' : 'web');
 
     /* 窗口版外壳只读 stdout 的第一行，其余的话都写到 stderr */
     const say = options.handshake ? (text) => process.stderr.write(`${text}\n`) : (text) => console.log(text);
     const reply = (data) => process.stdout.write(`${JSON.stringify(data)}\n`);
 
     const settings = createSettings();
-    const lock = acquireLock({ dir: settings.dir, kind: options.handshake ? 'gui' : 'web' });
+    const lock = acquireLock({ dir: settings.dir, kind: ui });
     if (!lock.ok) {
         const message = describeHolder(lock.holder, lock.file);
         if (options.handshake) reply({ ready: false, error: 'locked', holder: lock.holder, message });
@@ -68,6 +75,20 @@ async function main() {
     process.on('exit', () => lock.release());
 
     const runner = createRunner({ root: ROOT, settings });
+
+    if (ui === 'tui') {
+        /* 终端被关掉（SIGHUP）或者被结束（SIGTERM）：也要把工具停掉、等它们收尾 */
+        const leave = async () => {
+            runner.stop();
+            await runner.whenIdle(STOP_GRACE_MS + 2000);
+            process.exit(0);
+        };
+        process.on('SIGTERM', leave);
+        process.on('SIGHUP', leave);
+        await runTui({ root: ROOT, runner, settings });
+        return 0;
+    }
+
     const server = await startServer({
         root: ROOT,
         runner,
