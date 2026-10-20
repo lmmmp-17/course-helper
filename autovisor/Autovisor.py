@@ -439,6 +439,10 @@ def cli() -> int:
         else:
             logger.debug(f"浏览器关闭结束运行: {logger.summarize_exception(exc)}")
         exit_code = 1
+    except KeyboardInterrupt:
+        # Ctrl+C, 或者在启动器里点了停止: 正常结束, 不该甩一串 asyncio 堆栈
+        logger.info("已停止.", shift=True)
+        exit_code = 130
     except ConfigError as exc:
         logger.error(f"配置文件无效: {exc}", shift=True)
         if getattr(sys, "frozen", False):
