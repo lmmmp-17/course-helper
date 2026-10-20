@@ -1,0 +1,52 @@
+{
+  "RT_GROUP_ICON": {
+    "#1": {
+      "0000": ["icon.png", "icon16.png"]
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "identity": { "name": "CourseHelper.Window", "version": "" },
+        "description": "网课助手",
+        "minimum-os": "win10",
+        "execution-level": "as invoker",
+        "ui-access": false,
+        "auto-elevate": false,
+        "dpi-awareness": "system",
+        "disable-theming": false,
+        "disable-window-filtering": false,
+        "high-resolution-scrolling-aware": false,
+        "ultra-high-resolution-scrolling-aware": false,
+        "long-path-aware": true,
+        "printer-driver-isolation": false,
+        "gdi-scaling": false,
+        "segment-heap": false,
+        "use-common-controls-v6": true
+      }
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0000": {
+        "fixed": { "file_version": "0.0.0.0", "product_version": "0.0.0.0" },
+        "info": {
+          "0804": {
+            "Comments": "学习通、长江雨课堂、智慧树三个工具的控制台",
+            "CompanyName": "",
+            "FileDescription": "网课助手",
+            "FileVersion": "",
+            "InternalName": "CourseHelper",
+            "LegalCopyright": "",
+            "LegalTrademarks": "",
+            "OriginalFilename": "网课助手.exe",
+            "PrivateBuild": "",
+            "ProductName": "网课助手",
+            "ProductVersion": "",
+            "SpecialBuild": ""
+          }
+        }
+      }
+    }
+  }
+}

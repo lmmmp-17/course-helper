@@ -1,0 +1,70 @@
+# 发布 Windows 包：整个仓库 + 网课助手.exe（窗口版外壳）打成一个 zip。
+#
+# - 推送 v* 标签：编译、打包，发布到 GitHub Releases；标签里带 - 的（v0.1.0-rc.1）发成预发布版
+# - 手动触发（Actions 页面 → release → Run workflow）：只编译打包，作为构建产物下载，不发布
+#
+# exe 是纯 Go（WebView2 用 go-webview2，不需要 cgo），在 Linux 上交叉编译即可。
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: desktop/windows/go.mod
+          cache-dependency-path: desktop/windows/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Test
+        run: |
+          (cd desktop/windows && go test ./...)
+          node --test launcher/tests/unit.test.mjs launcher/tests/backend.test.mjs launcher/tests/tui.test.mjs
+
+      - name: Build 网课助手.exe
+        run: |
+          go install github.com/tc-hib/go-winres@v0.3.3
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="0.0.0"; fi
+          desktop/windows/build.sh "$VERSION" "$RUNNER_TEMP"
+
+      - name: Package
+        run: |
+          mkdir -p "$RUNNER_TEMP/pkg"
+          # git archive 按 .gitattributes 输出：.cmd 是 CRLF，.sh 保留可执行位
+          git archive --format=tar --prefix=course-helper/ HEAD | tar -x -C "$RUNNER_TEMP/pkg"
+          cp "$RUNNER_TEMP/网课助手.exe" "$RUNNER_TEMP/pkg/course-helper/"
+          (cd "$RUNNER_TEMP/pkg" && zip -qr "$GITHUB_WORKSPACE/course-helper-windows.zip" course-helper)
+          unzip -l course-helper-windows.zip | grep -E "网课助手.exe|start.cmd|launcher/run.mjs"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: course-helper-windows
+          path: course-helper-windows.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRERELEASE=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then PRERELEASE="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" course-helper-windows.zip $PRERELEASE \
+            --title "网课助手 $GITHUB_REF_NAME" \
+            --notes "Windows：下载 course-helper-windows.zip，解压后双击里面的「网课助手.exe」。需要 Node.js 20 以上（没有的话会提示用 winget 安装）。Linux / macOS：用源码里的 ./start.sh。"

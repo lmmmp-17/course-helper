@@ -17,18 +17,22 @@
   - Windows：没装也没关系，第一次运行 `start.cmd` 时会问你要不要用 winget 自动装。
   - macOS：`brew install node`；Linux：用系统的包管理器装 `nodejs`。也可以到 [nodejs.org](https://nodejs.org/) 下载 LTS 版。
 - **智慧树不用自己装 Python**：第一次跑它时会自动准备好（Windows 上会问你要不要用 winget 装 uv）。
-- **下载这个仓库**：在 GitHub 页面点 **Code → Download ZIP** 解压，三个工具一次就全拿到了；或者 `git clone https://github.com/lmmmp-17/course-helper.git`。
+- **下载**：
+  - Windows：到 [Releases](https://github.com/lmmmp-17/course-helper/releases) 下载最新的 **`course-helper-windows.zip`**，解压。三个工具和窗口版程序都在里面。
+  - Linux / macOS：在 GitHub 页面点 **Code → Download ZIP** 解压；或者 `git clone https://github.com/lmmmp-17/course-helper.git`。
 
 ### 2. 打开控制台
 
 | 系统 | 怎么启动 |
 | --- | --- |
-| Windows | 双击仓库里的 **`start.cmd`** |
-| Linux / macOS | 在仓库目录下执行 **`./start.sh`** |
+| Windows | 双击解压出来的 **`网课助手.exe`**（窗口版）；或者双击 **`start.cmd`**（终端版） |
+| Linux / macOS | 在仓库目录下执行 **`./start.sh`**（终端版） |
 
-控制台就显示在这个命令行窗口里（终端版）。窗口别关，关了在跑的平台会全部停掉。
+窗口版和终端版用的是同一套后端和同一份设置，在哪边填过的值，换另一边打开都还在。两个不能同时开。
 
-按键：
+**窗口版**：一个独立窗口，用鼠标点。关窗口时如果还有平台在跑，会先问你，确认后把它们都停掉。
+
+**终端版**：控制台就显示在这个命令行窗口里。窗口别关，关了在跑的平台会全部停掉。按键：
 
 | 按键 | 作用 |
 | --- | --- |
@@ -41,8 +45,8 @@
 
 ### 3. 开始
 
-1. 用 Tab 切到要用的平台，按需要改几个选项。不改就用默认的：静音、切到最高倍速、自动选浏览器。
-2. 按 **回车** 开始。第一次会自动安装依赖，要等一会儿。
+1. 选要用的平台（窗口版点平台名，终端版按 Tab），按需要改几个选项。不改就用默认的：静音、切到最高倍速、自动选浏览器。
+2. 点「开始」（终端版按 **回车**）。第一次会自动安装依赖，要等一会儿。
 3. 照控制台上的提示，在弹出来的浏览器窗口里操作：
 
    | 平台 | 你要做的 |
@@ -52,8 +56,8 @@
    | 智慧树 | 登录（登录页的滑块自己拖），点开要学的课程，进到能看到视频的播放页 |
 
    三个平台都一样：登录，点开课程，脚本认出来就自动开始。只有第一次需要登录，以后会记住。
-4. **想同时跑别的平台**：Tab 切过去，再按回车开始。正在跑的平台，名字旁边会显示已经跑了多久（比如 `>12:34`）；中途出错停下、你还没切过去看的，名字旁边会标「停了」。
-5. 要停哪个，就切到它按 **回车**。按 q 退出会把正在跑的全部停掉，等它们收完尾再走。
+4. **想同时跑别的平台**：切过去再开始。正在跑的平台，名字旁边会显示已经跑了多久；中途出错停下、你还没切过去看的，名字旁边会标「停了」。
+5. 要停哪个，就切到它点「停止」（终端版按回车）。关掉窗口版的窗口、或者在终端版里按 q 退出，会把正在跑的全部停掉，等它们收完尾再走。
 
 ### 4. 它们会做什么
 
@@ -78,7 +82,9 @@
 
 | 现象 | 处理 |
 | --- | --- |
-| 双击 `start.cmd` 后 Windows 提示"已保护你的电脑" | 点"更多信息"→"仍要运行"。从网上下载的 ZIP 解压出来的脚本可能会这样 |
+| 双击 `网课助手.exe` 或 `start.cmd` 后 Windows 提示"已保护你的电脑" | 点"更多信息"→"仍要运行"。从网上下载、没有数字签名的程序会这样 |
+| 窗口版提示缺少 WebView2 运行时 | 点「是」去下载安装（Windows 11 自带，少数 Windows 10 没有）；或者点「否」先用终端版 |
+| 窗口版提示「终端版的网课助手正在运行」 | 两个不能同时开，先在终端版里按 q 退出 |
 | `没找到 Node.js` | 按提示装 Node.js 20 或更新，装完重新运行 |
 | `依赖安装失败` | 检查网络后重新开始。国内网络慢的话，先执行 `npm config set registry https://registry.npmmirror.com` |
 | `调试端口一直没打开` | 这个平台的专用浏览器之前被打开过、还没关。关掉它的所有窗口再开始 |
@@ -162,7 +168,14 @@ Fedora 上 git 不带 subtree，要先 `sudo dnf install git-subtree`；Windows 
 - Linux：三个真实工具同时运行，学习通、雨课堂各自起了专用 Chrome、连上各自的端口，智慧树起了自己的 Chrome 停在登录页，三个浏览器进程互不相干。从控制台停掉智慧树，它的 Python 进程和浏览器都正常结束。当时本机的 9222 被一个旧的雨课堂窗口占着，所以学习通、雨课堂是用临时端口和临时目录测的。
 - Windows 11：三个工具通过控制台同时启动，学习通连 9222、雨课堂连 9223、智慧树起了 Edge，三个用户目录各不相同。按顺序停掉三个，每次都只结束了那一个工具的整棵进程树（智慧树那次是 13 个进程），另外两个不受影响；学习通、雨课堂的专用 Chrome 按设计留着。在控制台的命令行窗口按 Ctrl+C，在跑的工具会一起停掉。
 
-这一轮在 Windows 上发现、随后修掉的：工具自己结束后入口脚本卡在 pause 上（控制台一直显示在跑）；中文 Windows 控制台下 `.cmd` 里的中文行被读错位；智慧树的 Edge 被自动登录上系统的微软账号；强制停止后 `%TEMP%` 里留下 Playwright 的临时目录。**这几处修复还没在 Windows 上复测。**
+这一轮在 Windows 上发现、随后修掉并复测通过的：
+
+- 工具自己结束后入口脚本卡在 pause 上，控制台一直显示在跑；
+- 中文 Windows 控制台下 `.cmd` 里的中文行被读错位；
+- 智慧树的 Edge 被自动登录上系统的微软账号；
+- 智慧树的中文日志是乱码（Python 往管道写用的是 cp936）；
+- 停止时只能强杀，`%TEMP%` 里每次留下一个 Playwright 临时目录。改成关 stdin 之后，智慧树 0.6 秒正常收尾，临时目录被删掉；
+- Windows 上阻塞读 stdin 会让 `import cv2` 卡死，改成每 0.2 秒查一次管道。
 
 ### 控制台
 
@@ -177,8 +190,9 @@ Fedora 上 git 不带 subtree，要先 `sudo dnf install git-subtree`；Windows 
 ```
 course-helper/
 ├── README.md              ← 你正在看的
-├── start.cmd              入口（Windows）：打开控制台
-├── start.sh               入口（Linux / macOS）
+├── start.cmd              入口（Windows，终端版）
+├── start.sh               入口（Linux / macOS，终端版）
+├── desktop/windows/       Windows 窗口版外壳（网课助手.exe）：Go + WebView2，在 Releases 里发布
 ├── launcher/              控制台：本地 HTTP 服务 + 一个静态页面，没有 npm 依赖
 ├── xuexitong/             学习通（来自 lmmmp-17/xuexitongScript）
 ├── yuketang/              长江雨课堂（来自 lmmmp-17/yuketang）
@@ -187,6 +201,14 @@ course-helper/
     └── sync-from-forks.sh 从三个 fork 同步更新
 ```
 
+### 窗口版外壳（网课助手.exe）
+
+- 纯 Go（`github.com/jchv/go-webview2`，不需要 cgo），在 Linux 上交叉编译：`desktop/windows/build.sh`。推送 `v*` 标签时由 GitHub Actions 编译，和整个仓库一起打成 `course-helper-windows.zip` 发到 Releases（`.github/workflows/release.yml`）。仓库里不放二进制文件。
+- 它自己不干活：起一个后端（`node launcher\run.mjs --handshake`），读到地址后用 WebView2 打开窗口，里面就是浏览器版的那个页面。关窗口时关掉后端的 stdin，后端停掉所有平台、等它们收尾后退出；exe 被强杀时管道一断，后端照样收尾。
+- 单实例：第二次双击把已经开着的窗口提到前面。和终端版互斥由后端的锁判断。
+- 建窗口之前先查 WebView2 运行时：缺了的话窗口会先画出来再失败，留下一个空白窗口。
+- WebView2 的数据和后端日志放在 `%LOCALAPPDATA%\course-helper\`，不在解压出来的文件夹里生成东西。
+
 ### 测试
 
 ```bash
@@ -194,6 +216,7 @@ node --test launcher/tests/unit.test.mjs launcher/tests/backend.test.mjs launche
 (cd xuexitong/playwright && npm test)                          # 学习通：单元 + 端到端（需要本机 Chrome）
 (cd yuketang/playwright && npm test)                           # 雨课堂：同上
 (cd autovisor && uv run python -m unittest discover -s tests)  # 智慧树
+(cd desktop/windows && go test ./...)                          # 窗口版外壳里和平台无关的部分
 ```
 
 ### 授权

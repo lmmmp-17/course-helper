@@ -289,6 +289,8 @@
 
 <script type="module">
 const token = new URL(location.href).searchParams.get('token') || '';
+/* 装在 Windows 窗口版里（网课助手.exe）时地址里带 shell=gui：有些提示要换个说法 */
+const inWindow = new URL(location.href).searchParams.get('shell') === 'gui';
 const query = `token=${encodeURIComponent(token)}`;
 const api = (path, init) => fetch(`/api/${path}?${query}`, init);
 const $ = (id) => document.getElementById(id);
@@ -378,7 +380,9 @@ function renderLead() {
   if (!ui.linked) {
     lead.replaceChildren(
       el('p', { className: 'pen', textContent: '和启动器断开了。' }),
-      el('p', { textContent: '终端窗口关掉的话，重新运行 start.cmd（Linux / macOS 是 start.sh），打开它给的新地址。' }),
+      el('p', { textContent: inWindow
+        ? '关掉这个窗口，再重新打开网课助手。'
+        : '终端窗口关掉的话，重新运行 start.cmd（Linux / macOS 是 start.sh），打开它给的新地址。' }),
     );
     return;
   }

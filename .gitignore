@@ -2,3 +2,6 @@
 launcher/tools.local.json
 node_modules
 *.log
+# 窗口版的编译产物：通过 GitHub Releases 发布，不进仓库
+/网课助手.exe
+desktop/windows/rsrc_windows_*.syso
