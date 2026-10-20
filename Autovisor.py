@@ -32,6 +32,7 @@ from modules.login import (
 from modules.logger import Logger
 from modules.pointer import human_click
 from modules.slider import slider_verify
+from modules.stop_signal import watch_stdin_for_stop
 from modules.tasks import (
     play_video,
     skip_questions,
@@ -413,6 +414,9 @@ def cli() -> int:
     print_banner()
     logger = Logger()
     exit_code = 0
+    # 从统一启动器启动时, 它关掉 stdin 就是让我们停(见 modules/stop_signal.py)
+    if os.environ.get("COURSE_UI") == "1":
+        watch_stdin_for_stop()
     try:
         logger.section("初始化")
         logger.info("程序启动中...")
