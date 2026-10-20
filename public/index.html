@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>刷课工具启动器</title>
+<!-- 这版界面只求能用：挑工具、填选项、开始/停止、看进度。
+     样式留到设计那一轮整体重做——后端是 JSON + SSE，换掉这个文件就行，
+     接口见同目录 README 的「控制台接口」一节。 -->
+<style>
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; margin: 0; padding: 24px; line-height: 1.6; }
+  main { max-width: 860px; margin: 0 auto; }
+  .tools { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+  .tools button { padding: 8px 14px; cursor: pointer; }
+  .tools button[aria-pressed="true"] { outline: 2px solid currentColor; }
+  .tools button:disabled { opacity: .5; cursor: not-allowed; }
+  .field { margin: 10px 0; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .field label { min-width: 11em; }
+  .field input[type="text"], .field input[type="number"], .field input[type="password"], .field select { min-width: 22em; padding: 4px; }
+  .help { color: #666; font-size: .9em; }
+  .hint { background: #f4f4f4; padding: 10px 12px; margin: 12px 0; }
+  .status { font-weight: 600; margin: 12px 0; min-height: 1.6em; }
+  pre { background: #111; color: #eee; padding: 12px; height: 300px; overflow: auto; white-space: pre-wrap; }
+  .error { color: #b00; }
+</style>
+</head>
+<body>
+<main>
+  <h1>刷课工具启动器</h1>
+  <p class="help">选一个工具，填好选项，点开始。同一时间只能跑一个——它们都要开浏览器。</p>
+
+  <div class="tools" id="tools"></div>
+  <div class="hint" id="hint" hidden></div>
+  <form id="form"></form>
+  <p>
+    <button id="start" type="button">开始</button>
+    <button id="stop" type="button" disabled>停止</button>
+    <span class="error" id="error"></span>
+  </p>
+  <div class="status" id="status"></div>
+  <pre id="log"></pre>
+</main>
+
+<script type="module">
+const token = new URL(location.href).searchParams.get('token') || '';
+const api = (path, init) => fetch(`/api/${path}?token=${encodeURIComponent(token)}`, init);
+const $ = (id) => document.getElementById(id);
+
+let tools = [];
+let picked = null;
+
+function field(option) {
+  const key = option.flag || option.key.join('.');
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+  const label = document.createElement('label');
+  label.textContent = option.label + (option.required ? ' *' : '');
+  label.htmlFor = `f-${key}`;
+  wrap.append(label);
+
+  let input;
+  if (option.type === 'bool') {
+    input = document.createElement('input');
+    input.type = 'checkbox';
+    if (option.default === true) input.checked = true;
+  } else if (option.type === 'select') {
+    input = document.createElement('select');
+    for (const choice of option.choices) {
+      const node = document.createElement('option');
+      node.value = choice.value;
+      node.textContent = choice.label;
+      input.append(node);
+    }
+    if (option.default !== undefined) input.value = String(option.default);
+  } else {
+    input = document.createElement('input');
+    input.type = option.type === 'number' ? 'number' : option.type === 'password' ? 'password' : 'text';
+    if (option.placeholder) input.placeholder = option.placeholder;
+    if (option.default !== undefined) input.value = String(option.default);
+  }
+  input.id = `f-${key}`;
+  input.dataset.key = key;
+  input.dataset.kind = option.type;
+  wrap.append(input);
+  if (option.help) {
+    const help = document.createElement('span');
+    help.className = 'help';
+    help.textContent = option.help;
+    wrap.append(help);
+  }
+  return wrap;
+}
+
+function render() {
+  $('tools').replaceChildren(...tools.map((tool) => {
+    const button = document.createElement('button');
+    button.textContent = tool.name;
+    button.title = tool.ready ? tool.summary : `找不到目录：${tool.dir}`;
+    button.disabled = !tool.ready;
+    button.setAttribute('aria-pressed', String(picked?.id === tool.id));
+    button.onclick = () => { picked = tool; render(); };
+    return button;
+  }));
+  $('hint').hidden = !picked;
+  if (picked) $('hint').textContent = picked.hint;
+  $('form').replaceChildren(...(picked ? picked.options.map(field) : []));
+}
+
+function values() {
+  const out = {};
+  for (const input of $('form').querySelectorAll('[data-key]')) {
+    out[input.dataset.key] = input.dataset.kind === 'bool' ? input.checked : input.value;
+  }
+  return out;
+}
+
+function line(text) {
+  const log = $('log');
+  log.textContent += `${text}\n`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function setRunning(running, name) {
+  $('start').disabled = running;
+  $('stop').disabled = !running;
+  if (running) $('status').textContent = `${name} 运行中…`;
+}
+
+$('start').onclick = async () => {
+  $('error').textContent = '';
+  if (!picked) { $('error').textContent = '先选一个工具'; return; }
+  $('log').textContent = '';
+  const res = await api('start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tool: picked.id, values: values() }),
+  });
+  const body = await res.json();
+  if (!res.ok) { $('error').textContent = body.error || '启动失败'; return; }
+  setRunning(true, picked.name);
+};
+
+$('stop').onclick = async () => { await api('stop', { method: 'POST' }); };
+
+const events = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+events.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === 'state') {
+    setRunning(data.running, data.name);
+    if (data.status) $('status').textContent = data.status;
+    for (const text of data.lines || []) line(text);
+    return;
+  }
+  if (data.type === 'started') { setRunning(true, data.name); line(`—— ${data.name} 开始 ——`); return; }
+  if (data.type === 'status') { $('status').textContent = data.status; return; }
+  if (data.type === 'line') { line(data.line); return; }
+  if (data.type === 'exit') {
+    setRunning(false);
+    $('status').textContent = data.code === 0 ? `${data.name} 已结束` : `${data.name} 退出（code ${data.code}）`;
+    line(`—— 结束，退出码 ${data.code} ——`);
+  }
+};
+
+const first = await api('tools').then((r) => r.json());
+tools = first.tools;
+render();
+setRunning(first.state.running, first.state.name);
+</script>
+</body>
+</html>
