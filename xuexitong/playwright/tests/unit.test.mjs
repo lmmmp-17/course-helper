@@ -673,3 +673,39 @@ test('第一次运行自动安装依赖；装过就不再装；--setup 强制重
     assert.equal(ensureInstalled(silent, { force: true, run: ok }), true);
     assert.throws(() => ensureInstalled(silent, { dir: '/nonexistent-dir', run: () => ({ status: 1 }) }), /npmmirror/);
 });
+
+test('统一启动器关掉 stdin 就是让停：只触发一次，解除后不再触发', async () => {
+    const { PassThrough } = await import('node:stream');
+    const { watchStdinForStop } = await import('../src/stop-signal.mjs');
+    const stream = new PassThrough();
+    let stops = 0;
+    watchStdinForStop(stream, () => { stops += 1; });
+    stream.end();
+    await new Promise((done) => setImmediate(done));
+    assert.equal(stops, 1);
+    stream.emit('error', new Error('管道断了'));
+    assert.equal(stops, 1, '只算一次');
+
+    const other = new PassThrough();
+    let late = 0;
+    const unwatch = watchStdinForStop(other, () => { late += 1; });
+    unwatch();
+    other.end();
+    await new Promise((done) => setImmediate(done));
+    assert.equal(late, 0);
+});
+
+test('统一启动器关掉 stdin：真实子进程里也能收到', async () => {
+    const { spawn } = await import('node:child_process');
+    const { fileURLToPath } = await import('node:url');
+    const helper = fileURLToPath(new URL('../src/stop-signal.mjs', import.meta.url));
+    const child = spawn(process.execPath, ['--input-type=module', '-e',
+        `import { watchStdinForStop } from ${JSON.stringify(helper)};
+         watchStdinForStop(process.stdin, () => { console.log('收到停止'); process.exit(0); });
+         console.log('就绪');`], { stdio: ['pipe', 'pipe', 'inherit'] });
+    let out = '';
+    child.stdout.on('data', (chunk) => { out += chunk; if (out.includes('就绪')) child.stdin.end(); });
+    const code = await new Promise((done) => child.on('close', done));
+    assert.equal(code, 0);
+    assert.match(out, /收到停止/);
+});
