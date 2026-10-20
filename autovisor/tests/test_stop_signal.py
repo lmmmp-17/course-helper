@@ -59,3 +59,28 @@ class StopSignalTests(unittest.TestCase):
         out, _ = child.communicate(timeout=10)
         self.assertEqual(child.returncode, 130)
         self.assertEqual(out.decode().split(), ["收尾", "已停止"], "finally 要先跑完")
+
+
+class WindowsPollingTests(unittest.TestCase):
+    # Windows 上不能阻塞读 stdin: 挂着的 ReadFile 会挡住 import cv2(pc 实测卡死)。
+    # 改成每隔一会儿查一次管道断了没有; 这里用假的查询函数测这条路径
+    def test_polls_until_the_pipe_closes(self):
+        states = iter(["open", "open", "closed"])
+        fired = threading.Event()
+        thread = watch_stdin_for_stop(pipe_state=lambda: next(states), interrupt=fired.set, interval=0.01)
+        self.assertTrue(fired.wait(2))
+        thread.join(2)
+
+    def test_gives_up_quietly_when_the_pipe_cannot_be_queried(self):
+        fired = threading.Event()
+        thread = watch_stdin_for_stop(pipe_state=lambda: "unknown", interrupt=fired.set, interval=0.01)
+        thread.join(2)
+        self.assertFalse(fired.is_set(), "查不了不等于让停")
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows only")
+    def test_console_stdin_is_not_watched(self):
+        # 不是管道(控制台、文件)就不挂, 也不该误停
+        from modules.stop_signal import _windows_stdin_pipe_state
+        if not sys.stdin.isatty():
+            self.skipTest("stdin 不是控制台")
+        self.assertIsNone(_windows_stdin_pipe_state())
