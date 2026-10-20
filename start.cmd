@@ -2,7 +2,7 @@
 setlocal
 for /f "tokens=2 delims=:." %%c in ('chcp') do set "OLDCP=%%c"
 chcp 65001 >nul
-rem 刷课工具统一启动器的入口（Windows）：双击运行即可。
+rem 网课助手（统一启动器）的入口（Windows）：双击运行即可。
 rem 会开一个本地控制台，并用你的默认浏览器打开它。
 cd /d "%~dp0"
 

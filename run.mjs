@@ -24,7 +24,7 @@ function parse(argv) {
 }
 
 const HELP = `
-刷课工具统一启动器
+网课助手（统一启动器）
 
 用法
   Windows：双击 start.cmd；Linux / macOS：./start.sh

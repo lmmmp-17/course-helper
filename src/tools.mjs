@@ -10,6 +10,7 @@
  * ------------------------------------------------------------------ */
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { readConfig } from './args.mjs';
 
 /* 仓库放在哪儿因机器而异（实测 Windows 上在 claude-wintest 下），所以留一个
  * 覆盖文件：tools.local.json，形如 { "yuketang": "D:\\code\\yuketang" }。
@@ -50,12 +51,13 @@ export const TOOLS = [
                 label: '倍速',
                 type: 'select',
                 choices: [
-                    { value: 'max', label: '最高（播放器菜单里最高的一档）' },
-                    { value: '1', label: '不改（1x）' },
+                    { value: 'max', label: '最高' },
+                    { value: '1', label: '不改' },
                 ],
                 default: 'max',
+                help: '最高 = 播放器倍速菜单里能选的最高一档',
             },
-            { flag: '--no-mute', label: '不静音', type: 'bool', help: '默认静音，勾上才出声' },
+            { flag: '--no-mute', label: '静音', type: 'bool', default: true, invert: true, role: 'mute' },
             {
                 flag: '--no-auto-advance-no-video',
                 label: '遇到只剩测验的小节就停下',
@@ -81,13 +83,14 @@ export const TOOLS = [
                 label: '倍速',
                 type: 'select',
                 choices: [
-                    { value: 'max', label: '最高（播放器菜单里最高的一档）' },
-                    { value: '1', label: '不改（1x）' },
+                    { value: 'max', label: '最高' },
+                    { value: '1', label: '不改' },
                 ],
                 default: 'max',
+                help: '最高 = 播放器倍速菜单里能选的最高一档',
             },
             { flag: '--no-articles', label: '只看视频，跳过图文', type: 'bool' },
-            { flag: '--no-mute', label: '不静音', type: 'bool', help: '默认静音，勾上才出声' },
+            { flag: '--no-mute', label: '静音', type: 'bool', default: true, invert: true, role: 'mute' },
             { flag: '--log-level', label: '日志详细程度', type: 'select', hidden: true,
               choices: [{ value: 'quiet', label: '正常' }, { value: 'verbose', label: '详细' }], default: 'quiet' },
         ],
@@ -101,24 +104,43 @@ export const TOOLS = [
         kind: 'config',
         /* 配置写进这个文件；按平台取不同的文件名，和它自己的入口脚本一致 */
         configFile: { win32: 'config.ini', linux: 'config.linux.ini', darwin: 'config.macos.ini' },
-        hint: '第一次运行会生成配置文件。课程地址要填课程播放页（能直接看到视频的那一页）。',
+        hint: '会自动打开一个浏览器。课程地址填课程播放页，就是能直接看到视频的那一页。',
         options: [
             { key: ['course-url', 'URL1'], label: '课程地址', type: 'text', required: true,
               placeholder: 'https://studyvideoh5.zhihuishu.com/stuStudy?...' },
             { key: ['course-option', 'limitSpeed'], label: '倍速', type: 'select',
               choices: [
-                  { value: 'max', label: '最高（播放器菜单里最高的一档）' },
+                  { value: 'max', label: '最高' },
                   { value: '0', label: '不改' },
-              ], default: 'max' },
+              ], default: 'max', help: '最高 = 播放器倍速菜单里能选的最高一档' },
             { key: ['course-option', 'limitMaxTime'], label: '每门课最多跑几分钟', type: 'number', default: '30',
               help: '0 = 不限' },
-            { key: ['course-option', 'soundOff'], label: '静音', type: 'bool', default: true, invert: true,
-              help: '取消勾选才出声' },
+            { key: ['course-option', 'soundOff'], label: '静音', type: 'bool', default: true, role: 'mute' },
+            { key: ['script-option', 'enableHideWindow'], label: '把浏览器窗口移出屏幕', type: 'bool', default: false,
+              platforms: ['win32'], help: '看不见但照常播放。报窗口句柄错误时取消勾选' },
+            { key: ['script-option', 'enableAutoCaptcha'], label: '自动完成登录滑块', type: 'bool', default: false,
+              help: '填了手机号和密码才用得上；第一次勾上会多装 numpy、opencv' },
             { key: ['user-account', 'username'], label: '手机号', type: 'text', placeholder: '留空则在浏览器里手动登录' },
             { key: ['user-account', 'password'], label: '密码', type: 'password', placeholder: '留空则在浏览器里手动登录' },
         ],
     },
 ];
+
+/* config 类工具的配置文件，按平台取，和它自己的入口脚本一致 */
+export function configPath(tool, dir, platform = process.platform) {
+    return resolve(dir, tool.configFile[platform] || tool.configFile.linux);
+}
+
+/* 已有配置里的值，用来预填表单——用户可能已经用工具自带的方式配过了。
+ * 密码不回传给页面。 */
+function currentValues(tool, dir, platform) {
+    if (tool.kind !== 'config') return {};
+    try {
+        return readConfig(readFileSync(configPath(tool, dir, platform), 'utf8'), tool);
+    } catch (e) {
+        return {};
+    }
+}
 
 /* 工具在本机存不存在：目录和入口脚本都要在 */
 export function locate(tool, root, platform = process.platform) {
@@ -130,6 +152,7 @@ export function locate(tool, root, platform = process.platform) {
 export function describe(root, platform = process.platform) {
     return TOOLS.map((tool) => {
         const { dir, ready } = locate(tool, root, platform);
+        const current = ready ? currentValues(tool, dir, platform) : {};
         return {
             id: tool.id,
             name: tool.name,
@@ -138,7 +161,13 @@ export function describe(root, platform = process.platform) {
             kind: tool.kind,
             dir,
             ready,
-            options: tool.options.filter((option) => !option.hidden),
+            options: tool.options
+                .filter((option) => !option.hidden)
+                .filter((option) => !option.platforms || option.platforms.includes(platform))
+                .map((option) => {
+                    const key = option.flag || option.key.join('.');
+                    return key in current ? { ...option, current: current[key] } : option;
+                }),
         };
     });
 }

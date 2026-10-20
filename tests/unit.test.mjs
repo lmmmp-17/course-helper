@@ -5,9 +5,9 @@ import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
-import { buildArgs, applyConfig, missingRequired } from '../src/args.mjs';
+import { buildArgs, applyConfig, readConfig, missingRequired } from '../src/args.mjs';
 import { openCommand } from '../src/open.mjs';
-import { byId, entryFor } from '../src/tools.mjs';
+import { byId, entryFor, describe } from '../src/tools.mjs';
 import { createRunner } from '../src/runner.mjs';
 
 const xxt = byId('xuexitong');
@@ -22,10 +22,24 @@ test('参数拼装：只传用户真正设过的选项', () => {
 });
 
 test('参数拼装：开关没勾就不传，勾了才传', () => {
-    assert.deepEqual(buildArgs(xxt, { '--no-mute': false }), [], '没勾不该冒出一个反向参数');
-    assert.deepEqual(buildArgs(xxt, { '--no-mute': true }), ['--no-mute']);
-    /* 开关不该被当成带值的参数 */
-    assert.equal(buildArgs(xxt, { '--no-mute': true }).length, 1);
+    const stop = '--no-auto-advance-no-video';
+    assert.deepEqual(buildArgs(xxt, { [stop]: false }), [], '没勾不该冒出一个反向参数');
+    assert.deepEqual(buildArgs(xxt, { [stop]: true }), [stop]);
+});
+
+test('参数拼装：界面上是「静音」、参数是 --no-mute，明确取消勾选才传', () => {
+    assert.deepEqual(buildArgs(xxt, { '--no-mute': true }), [], '勾着静音不该传 --no-mute');
+    assert.deepEqual(buildArgs(xxt, {}), [], '没传值就是默认（静音）');
+    assert.deepEqual(buildArgs(xxt, { '--no-mute': false }), ['--no-mute']);
+});
+
+test('静音：三个工具界面上的说法一致，默认都勾上', () => {
+    for (const tool of [xxt, byId('yuketang'), zhs]) {
+        const mute = tool.options.find((option) => option.role === 'mute');
+        assert.ok(mute, `${tool.name} 要有静音选项`);
+        assert.equal(mute.label, '静音');
+        assert.equal(mute.default, true, `${tool.name} 默认要静音`);
+    }
 });
 
 test('参数拼装：数字框留空不要传空参数', () => {
@@ -70,6 +84,42 @@ test('配置合并：改掉填了的项，注释和没动过的项原样保留',
 test('配置合并：开关写成 True / False', () => {
     assert.match(applyConfig(INI, zhs, { 'course-option.soundOff': true }), /^soundOff = True$/m);
     assert.match(applyConfig(INI, zhs, { 'course-option.soundOff': false }), /^soundOff = False$/m);
+});
+
+test('配置合并：留空的项保持原样，不会把存着的密码清掉', () => {
+    const saved = INI.replace('password =', 'password = secret');
+    const out = applyConfig(saved, zhs, { 'user-account.password': '', 'user-account.username': '  ' });
+    assert.match(out, /^password = secret$/m);
+    assert.match(out, /^username =$/m);
+});
+
+test('配置合并：键名不分大小写，GUI.py 存过的小写配置不会多出重复键', () => {
+    /* configparser 写回时会把键全转小写；追加一行同名键它就读不了了 */
+    const lower = `[script-option]\nenablehidewindow = False\n\n[course-url]\nurl1 = old\n`;
+    const out = applyConfig(lower, zhs, { 'script-option.enableHideWindow': true, 'course-url.URL1': 'https://new' });
+    assert.match(out, /^enablehidewindow = True$/m);
+    assert.match(out, /^url1 = https:\/\/new$/m);
+    assert.equal(out.match(/hidewindow/gi).length, 1, '不该再追加一行');
+    assert.equal(out.match(/url1/gi).length, 1);
+});
+
+test('读配置：预填表单用，读出开关和文字，不读密码', () => {
+    const saved = INI.replace('password =', 'password = secret').replace('URL1 =', 'URL1 = https://x').replace('soundOff = True', 'soundoff = false');
+    const current = readConfig(saved, zhs);
+    assert.equal(current['course-url.URL1'], 'https://x');
+    assert.equal(current['course-option.limitSpeed'], '0');
+    assert.equal(current['course-option.soundOff'], false, '小写键、小写 false 都要认');
+    assert.equal('user-account.password' in current, false, '密码不往页面上送');
+    assert.equal('user-account.username' in current, false, '空值不算');
+});
+
+test('只在 Windows 上有用的选项，别的平台上不显示', () => {
+    const hide = (platform) => describe('/nonexistent', platform)
+        .find((tool) => tool.id === 'autovisor').options
+        .some((option) => option.key?.[1] === 'enableHideWindow');
+    assert.equal(hide('win32'), true);
+    assert.equal(hide('linux'), false);
+    assert.equal(hide('darwin'), false);
 });
 
 test('配置合并：同名键只改对应段落里的那个', () => {
@@ -128,7 +178,59 @@ test('跑进程：输出按行切，[[status]] 单独走状态而不混进日志
     assert.deepEqual(lines, ['第一行', '第二行']);
     assert.equal(seen.filter((e) => e.type === 'status').at(-1).status, '正在播放 1/3');
     assert.equal(runner.state().status, '正在播放 1/3');
-    assert.equal(runner.state().lines.includes('[[status]] 正在播放 1/3'), false, '状态不该混进日志');
+    assert.equal(runner.state().lines.some((e) => e.line.includes('[[status]]')), false, '状态不该混进日志');
+    assert.equal(typeof runner.state().lines[0].at, 'number', 'Autovisor 的行里没时间，要自己记');
+});
+
+test('跑进程：stderr 的行标出来，退出后日志还留着', async () => {
+    const child = fakeChild();
+    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => child });
+    await runner.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
+    child.stdout.emit('data', '普通\n');
+    child.stderr.emit('data', '出错了\n');
+    child.emit('close', 1, null);
+    const after = runner.state();
+    assert.equal(after.running, false);
+    assert.deepEqual(after.lines.map((e) => [e.line, e.err]), [['普通', false], ['出错了', true]]);
+    assert.equal(after.exit.code, 1);
+    assert.equal(after.exit.stopped, false, '不是用户点的停止');
+});
+
+test('跑进程：点停止之后退出，要能看出是手动停的', async () => {
+    const child = fakeChild();
+    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => child });
+    await runner.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
+    assert.equal(runner.stop(), true);
+    assert.equal(child.signal, 'SIGINT', '先温和地停');
+    child.emit('close', null, 'SIGINT');
+    assert.equal(runner.state().exit.stopped, true);
+});
+
+test('跑进程：Windows 上按进程树结束，不然 node / python 会留在后台接着播', async () => {
+    const calls = [];
+    const child = Object.assign(fakeChild(), { pid: 4242 });
+    const runner = createRunner({
+        root: '/tmp', platform: 'win32',
+        spawnProcess: (command, args) => { calls.push([command, args]); return calls.length === 1 ? child : fakeChild(); },
+    });
+    await runner.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
+    runner.stop();
+    assert.deepEqual(calls[1], ['taskkill', ['/pid', '4242', '/T', '/F']]);
+    assert.equal(child.killed, false, '不该只结束 cmd.exe');
+});
+
+test('跑进程：界面能看到这次用了什么设置，但看不到密码', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'launcher-'));
+    try {
+        await writeFile(join(dir, 'config.linux.ini'), INI, 'utf8');
+        await writeFile(join(dir, 'run.sh'), '#!/bin/sh\n', 'utf8');
+        const runner = createRunner({ root: dir, platform: 'linux', spawnProcess: () => fakeChild() });
+        await runner.start({ ...zhs, dir: '.' }, { 'course-url.URL1': 'https://x', 'user-account.password': 'secret' });
+        assert.equal(runner.state().values['course-url.URL1'], 'https://x');
+        assert.equal(JSON.stringify(runner.state()).includes('secret'), false);
+    } finally {
+        await rm(dir, { recursive: true, force: true });
+    }
 });
 
 test('跑进程：必填项没填就不启动', async () => {

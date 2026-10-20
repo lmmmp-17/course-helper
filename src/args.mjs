@@ -11,8 +11,11 @@ export function buildArgs(tool, values = {}) {
     for (const option of tool.options) {
         const raw = values[option.flag];
         if (option.type === 'bool') {
-            /* 开关只有勾上才传；没勾就是默认行为，不要显式传反向参数 */
-            if (raw === true) args.push(option.flag);
+            /* 开关只有勾上才传；没勾就是默认行为，不要显式传反向参数。
+             * invert：界面上的说法和参数相反（界面「静音」、参数 --no-mute），
+             * 这时是「明确取消勾选」才传；没传值就是默认，什么也不加。 */
+            const send = option.invert ? raw === false : raw === true;
+            if (send) args.push(option.flag);
             continue;
         }
         const value = raw === undefined || raw === null ? '' : String(raw).trim();
@@ -31,24 +34,23 @@ export function applyConfig(text, tool, values = {}) {
     for (const option of tool.options) {
         const raw = values[option.key.join('.')];
         if (raw === undefined || raw === null) continue;
-        let value = raw;
-        if (option.type === 'bool') {
-            /* invert: 界面上是"静音"，配置里也是 soundOff，含义一致；
-             * 留这个开关是为了以后出现"界面说法和配置项相反"的情况 */
-            const on = option.invert ? Boolean(raw) : Boolean(raw);
-            value = on ? 'True' : 'False';
-        }
-        wanted.set(option.key.join('.'), { section: option.key[0], name: option.key[1], value: String(value) });
+        /* 留空 = 保持原样。不然没填密码就会把配置里存着的密码清掉 */
+        if (option.type !== 'bool' && String(raw).trim() === '') continue;
+        const value = option.type === 'bool' ? (raw ? 'True' : 'False') : String(raw).trim();
+        /* 键名按小写比：configparser 不分大小写，而且它写回文件时会全转成小写
+         * （上游 GUI.py 存过的配置就是 enablehidewindow 这样）。按原样比的话会
+         * 认为键不存在、再追加一行，configparser 读到重复键直接报错。 */
+        wanted.set(option.key.join('.').toLowerCase(), { section: option.key[0], name: option.key[1], value });
     }
 
     let section = '';
     const written = new Set();
     const out = lines.map((line) => {
         const header = line.match(/^\s*\[([^\]]+)\]\s*$/);
-        if (header) { section = header[1]; return line; }
+        if (header) { section = header[1].trim(); return line; }
         const entry = line.match(/^(\s*)([A-Za-z_][\w-]*)(\s*=\s*)(.*)$/);
         if (!entry) return line;
-        const key = `${section}.${entry[2]}`;
+        const key = `${section}.${entry[2]}`.toLowerCase();
         const hit = wanted.get(key);
         if (!hit) return line;
         written.add(key);
@@ -61,13 +63,34 @@ export function applyConfig(text, tool, values = {}) {
     /* 模板里没有的项补到对应段落末尾 */
     for (const [key, hit] of wanted) {
         if (written.has(key)) continue;
-        const at = out.findIndex((line) => line.trim() === `[${hit.section}]`);
+        const at = out.findIndex((line) => line.trim().toLowerCase() === `[${hit.section.toLowerCase()}]`);
         if (at < 0) { out.push(`[${hit.section}]`, `${hit.name} = ${hit.value}`); continue; }
         let end = at + 1;
         while (end < out.length && !/^\s*\[[^\]]+\]\s*$/.test(out[end])) end += 1;
         out.splice(end, 0, `${hit.name} = ${hit.value}`);
     }
     return out.join('\n');
+}
+
+/* 从已有的 ini 里读出界面上那几项的当前值，用来预填表单。
+ * 键名不分大小写（configparser 也不分）；密码不读，不往页面上送。 */
+export function readConfig(text, tool) {
+    const found = new Map();
+    let section = '';
+    for (const line of text.split(/\r?\n/)) {
+        const header = line.match(/^\s*\[([^\]]+)\]\s*$/);
+        if (header) { section = header[1].trim().toLowerCase(); continue; }
+        const entry = line.match(/^\s*([A-Za-z_][\w-]*)\s*=\s*(.*?)\s*$/);
+        if (entry) found.set(`${section}.${entry[1].toLowerCase()}`, entry[2]);
+    }
+    const out = {};
+    for (const option of tool.options) {
+        if (!option.key || option.type === 'password') continue;
+        const raw = found.get(option.key.join('.').toLowerCase());
+        if (raw === undefined || raw === '') continue;
+        out[option.key.join('.')] = option.type === 'bool' ? /^(true|1|yes|on)$/i.test(raw) : raw;
+    }
+    return out;
 }
 
 /* 必填项检查，返回缺了哪些（给界面提示用） */
