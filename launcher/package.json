@@ -1,0 +1,11 @@
+{
+  "name": "course-launcher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "把三个刷课工具收到一个本地控制台里",
+  "scripts": {
+    "start": "node run.mjs",
+    "test": "node --test tests/unit.test.mjs"
+  }
+}
