@@ -33,6 +33,20 @@ export function entryFor(tool, platform = process.platform) {
     return platform === 'win32' ? tool.entry.win32 : tool.entry.posix;
 }
 
+/* 学习通、雨课堂共用：两个工具的 --browser 是同一套取值 */
+const BROWSER_FLAG = {
+    flag: '--browser',
+    label: '浏览器',
+    type: 'select',
+    choices: [
+        { value: 'auto', label: '自动' },
+        { value: 'chrome', label: 'Chrome' },
+        { value: 'edge', label: 'Edge' },
+    ],
+    default: 'auto',
+    help: '自动 = 装了 Chrome 就用 Chrome，没有就用 Edge',
+};
+
 export const TOOLS = [
     {
         id: 'xuexitong',
@@ -43,7 +57,7 @@ export const TOOLS = [
         entry: { win32: 'start.cmd', posix: './start.sh' },
         kind: 'flags',
         /* 开始之后要用户做什么，直接显示在界面上 */
-        hint: '会自动打开一个专用 Chrome。在里面登录学习通，点开课程的任意一节，脚本就开始。',
+        hint: '会自动打开一个专用的浏览器窗口。在里面登录学习通，点开课程的任意一节，脚本就开始。',
         options: [
             { flag: '--max-sections', label: '最多播几节', type: 'number', placeholder: '留空 = 不限' },
             {
@@ -64,6 +78,7 @@ export const TOOLS = [
                 type: 'bool',
                 help: '默认是跳过去找下一个有视频的小节',
             },
+            BROWSER_FLAG,
             { flag: '--log-level', label: '日志详细程度', type: 'select', hidden: true,
               choices: [{ value: 'quiet', label: '正常' }, { value: 'verbose', label: '详细' }], default: 'quiet' },
         ],
@@ -75,7 +90,7 @@ export const TOOLS = [
         dir: '../yuketang',
         entry: { win32: 'start.cmd', posix: './start.sh' },
         kind: 'flags',
-        hint: '会自动打开一个专用 Chrome。在里面登录雨课堂，点开课程里任意一个视频，脚本就开始。',
+        hint: '会自动打开一个专用的浏览器窗口。在里面登录雨课堂，点开课程里任意一个视频，脚本就开始。',
         options: [
             { flag: '--max-items', label: '最多学几项', type: 'number', placeholder: '留空 = 不限' },
             {
@@ -91,6 +106,7 @@ export const TOOLS = [
             },
             { flag: '--no-articles', label: '只看视频，跳过图文', type: 'bool' },
             { flag: '--no-mute', label: '静音', type: 'bool', default: true, invert: true, role: 'mute' },
+            BROWSER_FLAG,
             { flag: '--log-level', label: '日志详细程度', type: 'select', hidden: true,
               choices: [{ value: 'quiet', label: '正常' }, { value: 'verbose', label: '详细' }], default: 'quiet' },
         ],
@@ -116,6 +132,14 @@ export const TOOLS = [
             { key: ['course-option', 'limitMaxTime'], label: '每门课最多跑几分钟', type: 'number', default: '30',
               help: '0 = 不限' },
             { key: ['course-option', 'soundOff'], label: '静音', type: 'bool', default: true, role: 'mute' },
+            /* Autovisor 自己的默认：Windows 用 Edge（系统自带），别的平台用 Chrome */
+            { key: ['browser-option', 'driver'], label: '浏览器', type: 'select',
+              choices: [
+                  { value: 'Edge', label: 'Edge' },
+                  { value: 'Chrome', label: 'Chrome' },
+                  { value: 'Chromium', label: 'Chromium', platforms: ['linux'] },
+              ], default: 'Chrome', platformDefault: { win32: 'Edge' },
+              help: '选电脑上装着的那个' },
             { key: ['script-option', 'enableHideWindow'], label: '把浏览器窗口移出屏幕', type: 'bool', default: false,
               platforms: ['win32'], help: '看不见但照常播放。报窗口句柄错误时取消勾选' },
             { key: ['script-option', 'enableAutoCaptcha'], label: '自动完成登录滑块', type: 'bool', default: false,
@@ -166,7 +190,15 @@ export function describe(root, platform = process.platform) {
                 .filter((option) => !option.platforms || option.platforms.includes(platform))
                 .map((option) => {
                     const key = option.flag || option.key.join('.');
-                    return key in current ? { ...option, current: current[key] } : option;
+                    const shown = { ...option };
+                    if (option.platformDefault && platform in option.platformDefault) {
+                        shown.default = option.platformDefault[platform];
+                    }
+                    if (option.choices) {
+                        shown.choices = option.choices.filter((choice) => !choice.platforms || choice.platforms.includes(platform));
+                    }
+                    if (key in current) shown.current = current[key];
+                    return shown;
                 }),
         };
     });

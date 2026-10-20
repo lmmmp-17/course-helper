@@ -271,3 +271,29 @@ test('配置类工具：把值写进它自己的配置文件，并带上 --confi
         await rm(dir, { recursive: true, force: true });
     }
 });
+
+test('浏览器：学习通、雨课堂选「自动」不传参数，选了哪个才传 --browser', () => {
+    for (const tool of [xxt, byId('yuketang')]) {
+        assert.deepEqual(buildArgs(tool, { '--browser': 'auto' }), [], tool.id);
+        assert.deepEqual(buildArgs(tool, { '--browser': 'edge' }), ['--browser', 'edge'], tool.id);
+        assert.deepEqual(buildArgs(tool, { '--browser': 'chrome' }), ['--browser', 'chrome'], tool.id);
+    }
+});
+
+test('浏览器：智慧树写进 [browser-option] driver，默认值跟着平台走', () => {
+    const driverOf = (platform) => describe('/nonexistent', platform)
+        .find((tool) => tool.id === 'autovisor').options
+        .find((option) => option.key?.[1] === 'driver');
+    assert.equal(driverOf('win32').default, 'Edge', 'Windows 自带 Edge，和 Autovisor 自己的默认一致');
+    assert.equal(driverOf('linux').default, 'Chrome');
+    assert.equal(driverOf('darwin').default, 'Chrome');
+    assert.deepEqual(driverOf('win32').choices.map((c) => c.value), ['Edge', 'Chrome'], 'Chromium 只在 Linux 上由 run.sh 下载');
+    assert.ok(driverOf('linux').choices.some((c) => c.value === 'Chromium'));
+
+    const out = applyConfig(INI, zhs, { 'browser-option.driver': 'Edge' });
+    assert.match(out, /\[browser-option\]\ndriver = Edge/, '模板里没有这一段就补上');
+    const kept = applyConfig('[browser-option]\n;可选 Edge 或 Chrome\ndriver = Chrome\nEXE_PATH =\n', zhs, { 'browser-option.driver': 'Edge' });
+    assert.equal(kept, '[browser-option]\n;可选 Edge 或 Chrome\ndriver = Edge\nEXE_PATH =\n');
+    /* GUI.py 存过的是小写 edge；界面上的单选值是 Edge，要对得上才会选中 */
+    assert.equal(readConfig('[browser-option]\ndriver = edge\n', zhs)['browser-option.driver'], 'Edge');
+});

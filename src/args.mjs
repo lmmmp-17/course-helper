@@ -88,7 +88,13 @@ export function readConfig(text, tool) {
         if (!option.key || option.type === 'password') continue;
         const raw = found.get(option.key.join('.').toLowerCase());
         if (raw === undefined || raw === '') continue;
-        out[option.key.join('.')] = option.type === 'bool' ? /^(true|1|yes|on)$/i.test(raw) : raw;
+        if (option.type === 'bool') {
+            out[option.key.join('.')] = /^(true|1|yes|on)$/i.test(raw);
+            continue;
+        }
+        /* 选项按登记表里的写法回传：配置里写的可能是 edge，界面上的单选值是 Edge */
+        const choice = option.choices?.find((item) => item.value.toLowerCase() === raw.toLowerCase());
+        out[option.key.join('.')] = choice ? choice.value : raw;
     }
     return out;
 }
