@@ -1,0 +1,35 @@
+[user-account]
+;配置账号密码，留空则打开网页后需手动登录
+username =
+password =
+
+[browser-option]
+;Linux 默认启动系统 Chrome(需已安装 google-chrome), EXE_PATH 通常留空
+;也可填 Edge(需已安装 microsoft-edge) 或 Chromium(由 run.sh 自动下载)
+driver = Chrome
+EXE_PATH =
+;实验性：连接已开启远程调试的日常 Chrome
+attachExistingChrome = False
+cdpUrl = http://127.0.0.1:9224
+
+[script-option]
+;自动滑块只支持登录页，课中安全验证仍需手动完成
+enableAutoCaptcha = False
+;隐藏窗口仅 Windows 支持; Linux 上把窗口放到其它窗口后面即可, 失焦不会打断播放
+enableHideWindow = False
+
+[course-option]
+;限制每门课程运行时长/min (不限制:0)
+limitMaxTime = 30
+;播放倍速。max = 切到播放器倍速菜单里最高的一档(推荐)
+;也可以填具体数字, 那样会取菜单里不超过它的最高一档; 填 0 则完全不碰倍速。
+;只会用菜单里列出来的档位——那才是平台允许的。实测这个播放器提供 1.0 / 1.25 / 1.5
+limitSpeed = max
+soundOff = True
+
+[course-url]
+URL1 =
+URL2 =
+URL3 =
+URL4 =
+URLn =
