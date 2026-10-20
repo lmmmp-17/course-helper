@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>学习空间</title>
+<style>
+  body { margin: 0; font-family: sans-serif; display: flex; gap: 16px; padding: 16px; }
+  /* 照实测：左侧目录是一个固定高度的滚动容器，内容远高于可视区 */
+  .learning-space-student-knowledge-nav { width: 300px; }
+  .nav-list { height: 420px; overflow-y: auto; border: 1px solid #ddd; }
+  .nav-item-node-inner { display: flex; align-items: center; padding: 10px 8px; }
+  .expand-icon { display: inline-block; width: 14px; height: 14px; margin-right: 6px; background: #999; cursor: pointer; }
+  .expand-icon.is-expanded { background: #36c; }
+  .leaf-item { display: flex; justify-content: space-between; padding: 12px 8px; margin-left: 20px; cursor: pointer; }
+  .leaf-item.is-active { background: #e8f0ff; }
+  .leaf-item-tag { border: 1px solid #aaa; padding: 0 4px; margin-right: 6px; }
+  .detail-container { width: 660px; }
+  .digital-human-player-box { position: relative; width: 606px; height: 307px; background: #333; }
+  .video-view-box { position: absolute; right: 0; top: 0; width: 120px; height: 307px; }
+  video { width: 100%; height: 100%; }
+  .status-box { position: absolute; left: 0; top: 0; width: 480px; height: 307px; display: none; }
+  .status-box.status-box-show { display: block; }
+  .play-status-box { position: absolute; left: 180px; top: 90px; width: 128px; height: 128px; background: #fff3; cursor: pointer; }
+  /* 照实测：控制栏平时 display:none，指针进到播放器里才出来 */
+  .control-box { display: none; position: absolute; left: 0; bottom: 0; width: 480px; height: 44px; background: #111; }
+  .digital-human-player-box.hover .control-box { display: block; }
+  .play-btn { position: absolute; left: 10px; top: 6px; width: 32px; height: 32px; background: #ccc; cursor: pointer; }
+  /* 倍速菜单照实测: 控制栏右侧, 菜单平时收起 */
+  .rate-btn-box { position: absolute; right: 10px; top: 6px; width: 48px; height: 32px; }
+  .rate-btn { width: 48px; height: 32px; background: #ccc; cursor: pointer; text-align: center; }
+  .rate-config-box { display: none; position: absolute; bottom: 34px; right: 0; width: 70px; background: #222; }
+  .rate-btn-box.open .rate-config-box { display: block; }
+  .rate-config-item { height: 26px; line-height: 26px; color: #fff; cursor: pointer; text-align: center; }
+  /* 第二套播放器(xtplayer)照实测的类名来: 自定义标签默认是 inline, 要给 display */
+  .xtplayer { position: relative; width: 606px; height: 307px; background: #333; }
+  .xt_video_player_wrap, .xt_video_player_container, .video-box { display: block; width: 100%; height: 100%; }
+  video.xt_video_player { width: 100%; height: 100%; }
+  .xt_video_player_big_play_layer { display: block; position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  .xt_video_player_big_play_layer.hidden { display: none; }
+  .xt_video_bit_play_btn { position: absolute; left: 269px; top: 120px; width: 68px; height: 68px; cursor: pointer; }
+  .xt_video_player_controls { display: block; position: absolute; left: 0; bottom: 0; width: 100%; height: 44px; background: #111; }
+  .xt_video_player_controls_inner { display: block; position: relative; height: 44px; }
+  .xt_video_player_play_btn { display: block; position: absolute; left: 8px; top: 6px; width: 32px; height: 32px; background: #ccc; cursor: pointer; }
+  .xt_video_player_speed { display: block; position: absolute; right: 8px; top: 6px; width: 48px; height: 32px; }
+  .xt_video_player_common_value { display: block; width: 48px; height: 32px; color: #fff; text-align: center; cursor: pointer; }
+  .xt_video_player_common_list_wrap { display: none; position: absolute; bottom: 34px; right: 0; width: 70px; background: #222; }
+  .xt_video_player_speed:hover .xt_video_player_common_list_wrap { display: block; }
+  .xt_video_player_common_list { list-style: none; margin: 0; padding: 0; }
+  .xt_video_player_common_list li { height: 26px; line-height: 26px; color: #fff; cursor: pointer; text-align: center; }
+  .xt_video_player_volume { display: block; position: absolute; right: 64px; top: 12px; width: 20px; height: 20px; }
+  .xt_video_player_common_icon { display: block; width: 20px; height: 20px; background: #ccc; cursor: pointer; }
+  .article-body { height: 360px; overflow-y: auto; border: 1px solid #ddd; display: none; }
+  .article-body p { height: 120px; margin: 0; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<div class="learning-space-student-knowledge-nav menu-nav-box">
+  <div class="nav-progress"><div class="progress-num">完成度 0.00%</div></div>
+  <div class="nav-list" id="nav"></div>
+</div>
+<div class="detail-container">
+  <div class="learning-space-control-unit">
+    <div class="control-left"><div class="unit-tag"></div><div class="unit-title"></div></div>
+    <div class="control-right"><span class="rate-detail"><span class="el-tooltip text">完成度：0%</span><span class="log-detail">详情</span></span></div>
+  </div>
+  <div class="learning-center-player digital-human" id="player-wrap"></div>
+  <div class="article-body" id="article"></div>
+</div>
+<script>
+/* 只接受 isTrusted 的事件；合成事件记进 rejected 且不产生效果。 */
+const probe = { rejected: [], log: [], realPlayClicks: 0, scriptedPlays: 0, wheels: 0 };
+window.__probe = probe;
+const trusted = (name, fn) => (e) => {
+  if (!e.isTrusted) { probe.rejected.push(name); return; }
+  fn(e);
+};
+
+/* 目录，照实测的结构与顺序：图文、课堂、视频交错；有学习项的知识点带 expand-icon，
+ * 折叠时它下面的学习项不渲染；没有学习项的知识点没有 expand-icon。 */
+const CATALOG = [
+  { leaf: { id: 'R1', kind: '图文', title: '读书报告参考资料一' } },
+  { leaf: { id: 'C1', kind: '课堂', title: '9月30日授课', done: true } },
+  { leaf: { id: 'C2', kind: '课堂', title: '导论 921(1)' } },
+  { node: '第一章', children: [
+    { leaf: { id: 'V1', kind: '视频', title: '专题讲座1', done: true } },
+    { leaf: { id: 'V2', kind: '视频', title: '专题讲座2' } },
+    { node: '一、没有学习项的知识点' },
+    { node: '二、折叠着的知识点', folded: true, children: [
+      { leaf: { id: 'V3', kind: '视频', title: '折叠节点里的视频' } },
+    ] },
+    { node: '三、没有学习项的知识点' },
+    { node: '四、没有学习项的知识点' },
+    { node: '五、没有学习项的知识点' },
+  ] },
+  { node: '第二章', children: [
+    { leaf: { id: 'V4', kind: '视频', title: '专题讲座3' } },
+    { leaf: { id: 'A1', kind: '图文', title: '第二章 课件' } },
+  ] },
+];
+const leaves = {};
+const start = new URLSearchParams(location.search).get('start') || 'V2';
+let active = null;
+
+function leafEl(spec) {
+  leaves[spec.id] = spec;
+  const el = document.createElement('div');
+  el.className = 'leaf-item';
+  el.dataset.id = spec.id;
+  el.innerHTML = '<div class="leaf-item-left"><div class="leaf-item-tag"></div><div class="leaf-item-title ellipsis-2"></div></div>'
+    + '<div class="leaf-item-right"><div class="leaf-item-status"></div></div>';
+  el.querySelector('.leaf-item-tag').textContent = ' ' + spec.kind + ' ';
+  el.querySelector('.leaf-item-title').textContent = spec.title;
+  if (spec.done) markDone(el);
+  el.addEventListener('click', trusted('leaf:' + spec.id, () => open(spec.id)));
+  return el;
+}
+function markDone(el) {
+  const status = el.querySelector('.leaf-item-status');
+  if (!status.querySelector('.icon-yuanquangou')) {
+    const icon = document.createElement('i');
+    icon.className = 'icon iconfont icon-yuanquangou';
+    status.appendChild(icon);
+  }
+}
+function render(items, parent) {
+  for (const item of items) {
+    const wrap = document.createElement('div');
+    wrap.className = 'nav-item';
+    if (item.leaf) {
+      const box = document.createElement('div');
+      box.className = 'nav-item-leaf-box';
+      box.appendChild(leafEl(item.leaf));
+      wrap.appendChild(box);
+    } else {
+      const node = document.createElement('div');
+      node.className = 'nav-item-node';
+      const inner = document.createElement('div');
+      inner.className = 'nav-item-node-inner';
+      const title = document.createElement('div');
+      title.className = 'nav-item-title' + (item.folded ? '' : ' is-expand');
+      title.innerHTML = '<span class="ellipsis-2"></span>';
+      title.firstChild.textContent = item.node;
+      const list = document.createElement('div');
+      list.className = 'nav-item-list';
+      if (item.children && item.children.length) {
+        const icon = document.createElement('i');
+        icon.className = 'expand-icon' + (item.folded ? '' : ' is-expanded');
+        inner.appendChild(icon);
+        icon.addEventListener('click', trusted('expand:' + item.node, () => {
+          if (icon.classList.contains('is-expanded')) return;
+          icon.classList.add('is-expanded');
+          title.classList.add('is-expand');
+          render(item.children, list);
+          probe.log.push('expand:' + item.node);
+        }));
+        if (!item.folded) render(item.children, list);
+      }
+      inner.appendChild(title);
+      node.appendChild(inner);
+      wrap.appendChild(node);
+      wrap.appendChild(list);
+    }
+    parent.appendChild(wrap);
+  }
+}
+render(CATALOG, document.getElementById('nav'));
+
+/* 数字人播放器，照实测：大播放按钮 .status-box .play-status-box，控制栏平时 display:none */
+const DURATION = 12;  /* 留出调倍速的时间 */
+/* 真实播放器会记住上次选的倍速(实测重新加载页面后仍是 2x), 桩也照做 */
+let rememberedRate = 1;
+/* 数字人播放器的 markup */
+function digitalHumanMarkup() {
+  return '<div class="digital-human-player-box"><div class="digital-human-video-box main-video"><div class="video-view-box">'
+    + '<video id="video" class="video-element"></video></div></div>'
+    + '<div class="media-controls-subtitle-box"><div class="control-box"><div class="btn btn-32 play-btn"></div>'
+    + '<div class="list-btn-box rate-btn-box"><div class="btn rate-btn">1x</div><div class="config-box rate-config-box">'
+    + ['2', '1.5', '1.25', '1', '0.75'].map((r) => `<div class="config-item rate-config-item${r === '1' ? ' active' : ''}" data-rate="${r}"> ${r}x </div>`).join('')
+    + '</div></div></div>'
+    + '<div class="status-box status-box-show"><div class="play-status-box"></div></div></div></div>';
+}
+
+/* 第二套播放器 xtplayer: 类名、标签、倍速文字("2.00X")都照实测来。
+ * 视频没有固定 id, 清晰度菜单也共用 common_list 类名, 所以一并放进来。 */
+function xtMarkup() {
+  return '<div class="xtplayer"><div id="video-box" class="video-box"><div class="xt_video_player_container video xt_pc">'
+    + '<xt-wrap class="xt_video_player_wrap"><video id="1792414492563_cfbe" class="xt_video_player"></video>'
+    + '<xt-bigbutton class="xt_video_player_big_play_layer pause_show"><button class="xt_video_bit_play_btn"></button></xt-bigbutton>'
+    + '<xt-controls class="xt_video_player_controls cf xt_video_player_controls_show"><xt-inner class="xt_video_player_controls_inner">'
+    + '<xt-playbutton class="xt_video_player_play_btn fl"></xt-playbutton>'
+    + '<xt-speedbutton class="xt_video_player_speed xt_video_player_common fr">'
+    + '<xt-speedvalue class="xt_video_player_common_value">1.00X</xt-speedvalue>'
+    + '<xt-speedlist class="xt_video_player_common_list_wrap"><ul class="xt_video_player_common_list">'
+    + ['2', '1.5', '1.25', '1', '0.5'].map((r) => `<li data-speed="${r}"${r === '1' ? ' class="xt_video_player_common_active"' : ''}>${Number(r).toFixed(2)}X</li>`).join('')
+    + '</ul></xt-speedlist></xt-speedbutton>'
+    + '<xt-volumebutton class="xt_video_player_volume xt_video_player_common fr"><xt-icon class="xt_video_player_common_icon"></xt-icon></xt-volumebutton>'
+    + '<xt-qualitybutton class="xt_video_player_quality xt_video_player_common fr"><xt-qualitylist class="xt_video_player_common_list_wrap">'
+    + '<ul class="xt_video_player_common_list"><li>高清</li><li>标清</li></ul></xt-qualitylist></xt-qualitybutton>'
+    + '</xt-inner></xt-controls></xt-wrap></div></div></div>';
+}
+
+function mountPlayer(id) {
+  const wrap = document.getElementById('player-wrap');
+  /* 一门课里两套播放器混着用(实测), 所以桩里也混着, 一轮流程同时覆盖两套 */
+  const xt = id !== 'V2';
+  wrap.innerHTML = xt ? xtMarkup() : digitalHumanMarkup();
+  const box = wrap.querySelector('.digital-human-player-box, .xtplayer');
+  const video = wrap.querySelector('video');
+  video.dataset.leaf = id;
+  let at = 0;
+  let paused = true;
+  video.playbackRate = rememberedRate;
+  rateBoxInit(box, video);
+  const def = (n, g) => Object.defineProperty(video, n, { get: g, configurable: true });
+  def('currentTime', () => at); def('duration', () => DURATION); def('paused', () => paused);
+  def('ended', () => at >= DURATION); def('readyState', () => 4);
+  video.play = () => { probe.scriptedPlays += 1; probe.log.push('scripted-play'); paused = false; return Promise.resolve(); };
+  /* 两套播放器的静音方式不同: 一套设 muted, 另一套把 volume 归零 */
+  video.addEventListener('volumechange', () => {
+    if (video.muted || video.volume === 0) probe.log.push('muted:' + id);
+  });
+  if (xt) {
+    /* 照实测: 这套播放器有看门狗, 外部设的 muted 会在一两秒内被它改回去,
+     * 只有点它自己的音量按钮才作数。少了这一条, 桩就测不到回退那条路。 */
+    video.addEventListener('volumechange', () => {
+      if (video.muted) setTimeout(() => { video.muted = false; probe.log.push('mute-reset:' + id); }, 500);
+    });
+    box.querySelector('.xt_video_player_common_icon').addEventListener('click', trusted('volume', () => {
+      video.volume = 0;
+      probe.log.push('volume-click:' + id);
+    }));
+  }
+  const play = (via) => trusted('player:' + via, () => {
+    probe.realPlayClicks += 1;
+    probe.log.push('play:' + via + ':' + id);
+    paused = false;
+    /* 两套播放器都是起播后把中间那层大按钮收起来 */
+    box.querySelector('.status-box')?.classList.remove('status-box-show');
+    box.querySelector('.xt_video_player_big_play_layer')?.classList.add('hidden');
+  });
+  box.querySelector('.play-status-box, .xt_video_bit_play_btn').addEventListener('click', play('big'));
+  box.querySelector('.play-btn, .xt_video_player_play_btn').addEventListener('click', play('control'));
+  box.addEventListener('mouseenter', trusted('player:hover', () => box.classList.add('hover')));
+  box.addEventListener('mouseleave', () => box.classList.remove('hover'));
+  const timer = setInterval(() => {
+    if (!video.isConnected) { clearInterval(timer); return; }
+    if (!paused && at < DURATION) {
+      at = Math.min(DURATION, at + 0.08);
+      if (at >= DURATION) {
+        paused = true;
+        probe.log.push('ended:' + id);
+        /* 平台过一会儿才在目录上打勾 */
+        setTimeout(() => markDone(document.querySelector(`.leaf-item[data-id="${id}"]`)), 300);
+      }
+    }
+  }, 40);
+}
+
+/* 倍速: 点按钮展开菜单, 点档位才真正改倍速 */
+function rateBoxInit(box, video) {
+  const xt = box.classList.contains('xtplayer');
+  const rateBox = box.querySelector(xt ? '.xt_video_player_speed' : '.rate-btn-box');
+  const label = rateBox.querySelector(xt ? '.xt_video_player_common_value' : '.rate-btn');
+  const items = () => rateBox.querySelectorAll(xt ? '.xt_video_player_common_list li' : '.rate-config-item');
+  const activeClass = xt ? 'xt_video_player_common_active' : 'active';
+  const mark = () => {
+    label.textContent = xt ? `${rememberedRate.toFixed(2)}X` : `${rememberedRate}x`;
+    items().forEach((n) => {
+      n.classList.toggle(activeClass, Number(n.dataset.speed ?? n.dataset.rate) === rememberedRate);
+    });
+  };
+  mark();
+  label.addEventListener('click', trusted('rate:button', () => {
+    rateBox.classList.toggle('open');
+    probe.log.push('rate-menu-open');
+  }));
+  for (const el of items()) {
+    el.addEventListener('click', trusted('rate:item', () => {
+      rememberedRate = Number(el.dataset.speed ?? el.dataset.rate);
+      video.playbackRate = rememberedRate;
+      mark();
+      rateBox.classList.remove('open');
+      probe.log.push('rate:' + rememberedRate + ':' + video.dataset.leaf);
+    }));
+  }
+}
+
+function open(id) {
+  const spec = leaves[id];
+  active = id;
+  document.querySelectorAll('.leaf-item').forEach((el) => el.classList.toggle('is-active', el.dataset.id === id));
+  document.querySelector('.unit-tag').textContent = spec.kind;
+  document.querySelector('.unit-title').textContent = spec.title;
+  const kind = spec.kind === '视频' ? 'video' : spec.kind === '图文' ? 'article' : 'class';
+  history.replaceState(null, '', `/ai-workspace/lms-graph/1/${kind}/${id}?start=${start}`);
+  probe.log.push('open:' + id);
+  const article = document.getElementById('article');
+  if (spec.kind === '视频') {
+    article.style.display = 'none';
+    mountPlayer(id);
+  } else {
+    document.getElementById('player-wrap').innerHTML = '';
+    article.style.display = 'block';
+    article.innerHTML = '<p>第一页</p><p>第二页</p><p>第三页</p><p>第四页</p><p>第五页</p>';
+    article.scrollTop = 0;
+    /* 实测：真实页面一打开图文就自己调用 user_article_finish，几秒内记为已读 */
+    setTimeout(() => { if (active === id) markDone(document.querySelector(`.leaf-item[data-id="${id}"]`)); }, 400);
+  }
+}
+document.addEventListener('wheel', (e) => { if (e.isTrusted) probe.wheels += 1; }, { passive: true });
+open(start);
+</script>
+</body>
+</html>
