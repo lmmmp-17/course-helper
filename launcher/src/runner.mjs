@@ -119,9 +119,13 @@ export function createRunner({ root, platform = process.platform, spawnProcess =
             spawnProcess('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
             return true;
         }
-        /* 先温和地停：两个 Node 工具收到 SIGINT 会自己收尾 */
+        /* 先温和地停：两个 Node 工具收到 SIGINT 会自己收尾。8 秒后还没退出就强制结束。
+         * 判断要看 exitCode / signalCode：child.killed 只表示信号发出去了，
+         * 发完 SIGINT 它就是 true，拿它判断的话强制结束永远不会发生。 */
         child.kill('SIGINT');
-        setTimeout(() => { if (!child.killed) child.kill('SIGKILL'); }, 8000).unref?.();
+        setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        }, 8000).unref?.();
         return true;
     }
 

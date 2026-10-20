@@ -249,6 +249,31 @@ test('跑进程：点停止之后退出，要能看出是手动停的', async ()
     assert.equal(runner.toolState('xuexitong').exit.stopped, true);
 });
 
+test('跑进程：SIGINT 之后 8 秒还没退出就强制结束', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const child = Object.assign(fakeChild(), { exitCode: null, signalCode: null });
+    const sent = [];
+    child.kill = (signal) => { sent.push(signal); child.killed = true; };
+    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => child });
+    await runner.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
+    runner.stop('xuexitong');
+    t.mock.timers.tick(7999);
+    assert.deepEqual(sent, ['SIGINT']);
+    t.mock.timers.tick(1);
+    assert.deepEqual(sent, ['SIGINT', 'SIGKILL'], 'killed 发完 SIGINT 就是 true，不能拿它判断进程退没退');
+
+    /* 已经自己退出了的，就不再补一刀 */
+    const quiet = Object.assign(fakeChild(), { exitCode: null, signalCode: null });
+    const quietSent = [];
+    quiet.kill = (signal) => { quietSent.push(signal); quiet.killed = true; };
+    const other = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => quiet });
+    await other.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
+    other.stop('xuexitong');
+    quiet.exitCode = 0;
+    t.mock.timers.tick(8000);
+    assert.deepEqual(quietSent, ['SIGINT']);
+});
+
 test('跑进程：Windows 上按进程树结束，不然 node / python 会留在后台接着播', async () => {
     const calls = [];
     const child = Object.assign(fakeChild(), { pid: 4242 });
