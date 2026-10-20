@@ -84,7 +84,7 @@ async def wait_for_course_page(context: BrowserContext, page: Page, poll_seconds
     智慧树的课程列表点课程会开一个新标签页。后台任务(续播、弹题、倍速)都绑在主标签页上,
     所以记下地址、关掉新标签页, 回到主标签页里打开同一个地址。
     """
-    logger.info("请在浏览器里点开要刷的课程, 进到能看到视频的播放页, 打开后会自动开始.")
+    logger.info("请在浏览器里点开要学的课程, 进到能看到视频的播放页, 打开后会自动开始.")
     while True:
         for candidate in list(context.pages):
             if candidate.is_closed() or not is_course_page(candidate.url):
