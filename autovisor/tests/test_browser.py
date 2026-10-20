@@ -293,7 +293,9 @@ class MainFlowWiringTests(unittest.TestCase):
         self.assertNotIn("def init_page", source)
         self.assertNotIn("stealth", source)
         # 连接模式下不能把用户真实浏览器的 Cookie 落盘
-        self.assertIn("if not session.attached:\n                    await persist_login_cookies", source)
+        self.assertIn("if logged_in and not session.attached:\n                    await persist_login_cookies", source)
+        # 没登录就停了不落盘: 匿名 Cookie 存下来, 下次启动会白白校验一遍再报"已失效"
+        self.assertIn("logged_in = False", source)
 
 
 class ParallelPortTests(unittest.TestCase):
