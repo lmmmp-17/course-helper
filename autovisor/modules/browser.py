@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 import sys
 from urllib.parse import urlparse
 
@@ -119,6 +120,44 @@ def _window_args() -> list[str]:
 AUTOMATION_DEFAULT_ARGS = ["--enable-automation"]
 AUTOMATION_FLAGS = ["--disable-blink-features=AutomationControlled"]
 
+# Edge 会拿 Windows 上登录的微软账号, 把这个临时 profile 也自动登录上(实测 Edge 155 /
+# Win11; 因为带了 --disable-sync, 同步没打开)。msImplicitSignin 关掉这个自动登录。
+EDGE_EXTRA_DISABLED_FEATURES = ["msImplicitSignin"]
+
+
+def playwright_disabled_features() -> list[str] | None:
+    """读出 Playwright 自己带的那条 --disable-features 里的特性名.
+
+    Chromium 只认最后一条 --disable-features(实测: 写两条时前一条整条作废), 而
+    Playwright 自己已经带了一条(里面有 msForceBrowserSignIn 等)。再加一条只写
+    msImplicitSignin, 就会把它那一串全部冲掉。所以要合并成一条, 列表从本机装的
+    Playwright 里读, 跟着它的版本走。读不出来就返回 None, 调用方不加, 不冒险。
+    """
+    try:
+        import playwright
+
+        lib = Path(playwright.__file__).resolve().parent / "driver" / "package" / "lib"
+        for path in (lib / "coreBundle.js", lib / "server" / "chromium" / "chromiumSwitches.js"):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            match = re.search(r"disabledFeatures\s*=\s*(?:\([^)]*\)\s*=>\s*)?\[(.*?)\]", text, re.S)
+            if match:
+                features = re.findall(r'"([A-Za-z0-9_]+)"', match.group(1))
+                if features:
+                    return features
+    except Exception:
+        return None
+    return None
+
+
+def _edge_disabled_features_arg() -> str | None:
+    base = playwright_disabled_features()
+    if base is None:
+        return None
+    merged = list(dict.fromkeys([*base, *EDGE_EXTRA_DISABLED_FEATURES]))
+    return "--disable-features=" + ",".join(merged)
+
 
 def _launch_args(config) -> dict:
     driver = get_effective_driver(config.driver)
@@ -137,6 +176,10 @@ def _launch_args(config) -> dict:
     # volume 都不变, 只是声音不送到声卡。连接现有 Chrome 时管不到启动参数。
     if getattr(config, "soundOff", False):
         args["args"].append("--mute-audio")
+    if driver == "edge":
+        disabled = _edge_disabled_features_arg()
+        if disabled:
+            args["args"].append(disabled)
     if executable_path:
         args["executable_path"] = executable_path
     elif channel:

@@ -9,6 +9,7 @@ from modules.browser import (
     FOCUS_STEPS,
     BrowserSession,
     _launch_args,
+    playwright_disabled_features,
     create_browser_session,
     get_effective_driver,
     is_loopback_cdp_endpoint,
@@ -304,3 +305,29 @@ class ParallelPortTests(unittest.TestCase):
             text = (Path(__file__).resolve().parent.parent / name).read_text(encoding="utf-8")
             self.assertIn("cdpUrl = http://127.0.0.1:9224", text, name)
             self.assertNotIn("showDonateCode", text, name)
+
+
+class EdgeSignInTests(unittest.TestCase):
+    class _Edge(_OwnedConfig):
+        driver = "edge"
+
+    def test_edge_keeps_playwrights_list_and_adds_implicit_signin(self):
+        # Chromium 只认最后一条 --disable-features: 只写 msImplicitSignin 的话,
+        # Playwright 自己那一串(含 msForceBrowserSignIn)会整条作废, 所以要合并成一条
+        args = _launch_args(self._Edge())["args"]
+        flags = [a for a in args if a.startswith("--disable-features=")]
+        self.assertEqual(len(flags), 1, args)
+        features = flags[0].split("=", 1)[1].split(",")
+        self.assertIn("msImplicitSignin", features)
+        self.assertIn("msForceBrowserSignIn", features, "Playwright 自带的那几项要保留")
+        self.assertEqual(features[: len(playwright_disabled_features())], playwright_disabled_features())
+
+    def test_chrome_args_are_untouched(self):
+        args = _launch_args(_OwnedConfig())["args"]
+        self.assertFalse([a for a in args if a.startswith("--disable-features=")])
+
+    def test_unreadable_playwright_list_adds_nothing(self):
+        # 读不出来就不加: 加一条残缺的会把 Playwright 自己的那条冲掉
+        with unittest.mock.patch("modules.browser.playwright_disabled_features", return_value=None):
+            args = _launch_args(self._Edge())["args"]
+        self.assertFalse([a for a in args if a.startswith("--disable-features=")])
