@@ -1,0 +1,182 @@
+# 网课助手
+
+一个仓库装下三个网课工具，外加一个本地控制台。学习通、长江雨课堂、智慧树可以**同时跑**，每个平台各开各的浏览器窗口，在同一个页面里看进度。
+
+| 平台 | 目录 | 工具 | 来自 |
+| --- | --- | --- | --- |
+| 学习通 | [`xuexitong/`](xuexitong/) | Playwright 版 | [lmmmp-17/xuexitongScript](https://github.com/lmmmp-17/xuexitongScript)（fork 自 chaolucky18/xuexitongScript） |
+| 长江雨课堂 | [`yuketang/`](yuketang/) | Playwright 版 | [lmmmp-17/yuketang](https://github.com/lmmmp-17/yuketang)（fork 自 Gary-666/yuketang） |
+| 智慧树 | [`autovisor/`](autovisor/) | Autovisor | [lmmmp-17/Autovisor](https://github.com/lmmmp-17/Autovisor)（fork 自 CXRunfree/Autovisor） |
+
+## 一、初级使用教程
+
+### 1. 准备（只做一次）
+
+- **浏览器**：Google Chrome 或 Microsoft Edge，用你电脑上装的那个。Windows 自带 Edge，没装 Chrome 也能用。
+- **Node.js 20 或更新**：
+  - Windows：没装也没关系，第一次运行 `start.cmd` 时会问你要不要用 winget 自动装。
+  - macOS：`brew install node`；Linux：用系统的包管理器装 `nodejs`。也可以到 [nodejs.org](https://nodejs.org/) 下载 LTS 版。
+- **智慧树不用自己装 Python**：第一次跑它时会自动准备好（Windows 上会问你要不要用 winget 装 uv）。
+- **下载这个仓库**：在 GitHub 页面点 **Code → Download ZIP** 解压，三个工具一次就全拿到了；或者 `git clone https://github.com/lmmmp-17/course-helper.git`。
+
+### 2. 打开控制台
+
+| 系统 | 怎么启动 |
+| --- | --- |
+| Windows | 双击仓库里的 **`start.cmd`** |
+| Linux / macOS | 在仓库目录下执行 **`./start.sh`** |
+
+控制台会用**你平时用的浏览器**打开。没自动弹出来的话，把命令行窗口里打印的那条地址整条复制过去。这个命令行窗口别关，关了控制台就断了。
+
+### 3. 开始
+
+1. 点页面顶上的平台名，按需要改几个选项。不改就用默认的：静音、切到最高倍速、自动选浏览器。智慧树必须填**课程地址**（课程播放页，能直接看到视频的那一页）。
+2. 点 **「开始」**。第一次会自动安装依赖，要等一会儿。
+3. 照页面上的提示，在弹出来的浏览器窗口里操作：
+
+   | 平台 | 你要做的 |
+   | --- | --- |
+   | 学习通 | 登录，进入课程，点开任意一节 |
+   | 长江雨课堂 | 登录（验证码自己完成），进入课程，点开任意一个视频 |
+   | 智慧树 | 在打开的页面里登录（登录页的滑块自己拖）；之后会自动打开你填的课程 |
+
+   只有第一次需要登录，以后会记住。
+4. **想同时刷别的平台**：点另一个平台名，填好再点开始。正在跑的平台，名字旁边会显示已经跑了多久。
+5. 要停哪个，就选中它点 **「停止」**。关掉命令行窗口会把正在跑的全部停掉。
+
+### 4. 它们会做什么
+
+- 先静音，再切到播放器允许的最高倍速（学习通、雨课堂实测 2x，智慧树最高 1.5x），真实点击播放；暂停了会恢复，放完换下一个。
+- 已经完成的跳过；**计分的测验不代做**，会跳过去接着找下一个视频。
+- 智慧树课中弹出的不计分小题会自动作答并关掉；雨课堂播放中弹出任何窗口都会停下来等你处理。
+
+## 二、注意事项
+
+- 每个平台各开一个浏览器窗口。这些窗口可以被别的窗口**盖住**，也可以挪到另一个桌面，但**别最小化**，也别在里面切到别的标签页，否则视频会停。
+- 别在这些浏览器窗口里动鼠标。想用电脑就把它们放到后面。
+- 取消勾选「静音」会直接外放声音，在教室、宿舍里注意。
+- 同一个平台同时只能开一个；不同平台可以一起开。
+- 刷完把学习通、雨课堂的专用浏览器窗口关掉：它们开着调试端口，开着的时候本机任何程序都能控制它们。智慧树的浏览器会跟着它一起关。
+- **以前单独用过雨课堂工具的**：它的调试端口从 9222 改成了 9223（这样才能和学习通同时跑）。第一次用新版之前，先把以前留下的雨课堂专用浏览器窗口关掉，不然新版起不来，学习通也可能连到那个旧窗口上去。
+
+### 遇到问题
+
+先在控制台里选中那个平台，看日志最后几行。常见的：
+
+| 现象 | 处理 |
+| --- | --- |
+| 双击 `start.cmd` 后 Windows 提示"已保护你的电脑" | 点"更多信息"→"仍要运行"。从网上下载的 ZIP 解压出来的脚本可能会这样 |
+| `没找到 Node.js` | 按提示装 Node.js 20 或更新，装完重新运行 |
+| `依赖安装失败` | 检查网络后重新开始。国内网络慢的话，先执行 `npm config set registry https://registry.npmmirror.com` |
+| `调试端口一直没打开` | 这个平台的专用浏览器之前被打开过、还没关。关掉它的所有窗口再开始 |
+| `…上开着的是 Chrome，不是你选的 Edge` | 之前用另一种浏览器跑过，那个专用窗口还开着。关掉它再开始 |
+| 智慧树 `未检测到有效网址` | 课程地址要填课程**播放页**，不是课程首页 |
+| 平台名字是灰的 | 那个工具的目录不在了。重新下载完整的仓库 |
+
+各平台更细的说明在它们自己的 README 里：[学习通](xuexitong/README.md)、[雨课堂](yuketang/README.md)、[智慧树](autovisor/README.md)。
+
+## 三、进阶教程
+
+### 不用控制台，单独运行某个工具
+
+三个工具的目录都是完整的项目，进去照它们自己的 README 用就行，参数也在那里：
+
+| 平台 | 入口 | 说明 |
+| --- | --- | --- |
+| 学习通 | `xuexitong/start.cmd`、`xuexitong/start.sh` | [xuexitong/README.md](xuexitong/README.md) |
+| 长江雨课堂 | `yuketang/start.cmd`、`yuketang/start.sh` | [yuketang/README.md](yuketang/README.md) |
+| 智慧树 | `autovisor/run.cmd`、`autovisor/run.sh` | [autovisor/README.md](autovisor/README.md) |
+
+单独运行和在控制台里运行可以混着来，只是同一个平台别同时开两个。
+
+### 各平台的调试端口
+
+| 平台 | 端口 | 什么时候用到 |
+| --- | --- | --- |
+| 学习通 | 9222 | 专用浏览器 |
+| 长江雨课堂 | 9223 | 专用浏览器 |
+| 智慧树 | 9224 | 只在「连接已有 Chrome」模式下用；普通模式由 Playwright 自己启动浏览器，不占端口 |
+
+要换的话：学习通、雨课堂加 `--cdp-port <端口>`，智慧树改配置里的 `cdpUrl`。
+
+### 控制台的选项
+
+- 命令行参数：`--port <端口>` 固定控制台的端口，`--no-open` 不自动打开浏览器。例如 `./start.sh --no-open`。
+- 工具目录放在别处、加一个新工具：见 [launcher/README.md](launcher/README.md)。
+
+### 从三个 fork 同步更新（维护者）
+
+代码在三个 fork 里改，改完同步到这里：
+
+```bash
+scripts/sync-from-forks.sh              # 三个都同步
+scripts/sync-from-forks.sh autovisor    # 只同步一个
+```
+
+装了 git-subtree 的话，也可以直接用它，效果一样：
+
+```bash
+git subtree pull --prefix=xuexitong https://github.com/lmmmp-17/xuexitongScript feat/low-fingerprint-playwright --squash
+git subtree pull --prefix=yuketang  https://github.com/lmmmp-17/yuketang feat/real-browser --squash
+git subtree pull --prefix=autovisor https://github.com/lmmmp-17/Autovisor feat/low-fingerprint-cross-platform --squash
+```
+
+Fedora 上 git 不带 subtree，要先 `sudo dnf install git-subtree`；Windows 的 Git for Windows 和 macOS 的 git 都自带。
+
+## 四、有价值的技术细节
+
+### 为什么用 subtree，不用 submodule
+
+- GitHub 的 **Download ZIP 不包含 submodule 的内容**，下下来是三个空目录。这个仓库的读者大多是下 ZIP 的，所以三个工具的文件必须真的在仓库里。
+- 用 subtree 的 squash 方式合进来：仓库里只有每次同步时的快照，`.git` 不到 2MB，三个 fork 各自的完整历史还在 fork 里。每次同步的提交尾注里记着同步到了 fork 的哪个提交（`git-subtree-split`）。
+- 三个 fork 仍然是源头：上游有更新，先合进 fork，再同步到这里。
+
+### 三个工具为什么能同时跑
+
+| 可能冲突的地方 | 怎么分开的 |
+| --- | --- |
+| 浏览器和登录状态 | 学习通、雨课堂各用自己的专用目录（用户目录下的 `xuexitong-chrome`、`yuketang-chrome`，Edge 是 `-edge`）；智慧树普通模式由 Playwright 每次开一个临时目录 |
+| 调试端口 | 9222 / 9223 / 9224 错开。以前学习通和雨课堂都用 9222，后开的那个会直接连到先开的那个浏览器上去 |
+| 鼠标 | 点击和滚动是通过 CDP 发给各自页面的输入事件，不是挪系统光标，几个窗口之间不会抢 |
+| 窗口焦点 | 三个工具都在各自页面上开了焦点模拟，后台窗口里的页面照样认为自己有焦点 |
+| 被遮挡 | 三个工具的浏览器都带 `--disable-backgrounding-occluded-windows`，窗口互相盖住也不停（Windows 上实测，不带这一项盖住 1 秒内视频就停） |
+
+2026-10-20 在 Linux 上实测：三个真实工具同时运行，学习通、雨课堂各自起了专用 Chrome、连上各自的端口，智慧树起了自己的 Chrome 停在登录页；三个浏览器进程互不相干。从控制台停掉智慧树，它的 Python 进程和浏览器都正常结束（退出码 130）。当时本机的 9222 被一个旧的雨课堂窗口占着，所以学习通、雨课堂是用临时端口和临时目录测的。**Windows 上还没测过并行。**
+
+### 控制台
+
+- 每个平台一个运行槽：同一个平台不能开两个，不同平台互不等待。每条事件都带着是哪个平台的，界面按平台分别存表单、状态和日志，切换平台不影响别的在跑的。
+- 只绑 `127.0.0.1`，接口要带启动时随机生成的口令。
+- 更多（接口、配置文件怎么合并、Windows 上怎么停进程树）见 [launcher/README.md](launcher/README.md)。
+
+### 目录结构
+
+```
+course-helper/
+├── README.md              ← 你正在看的
+├── start.cmd              入口（Windows）：打开控制台
+├── start.sh               入口（Linux / macOS）
+├── launcher/              控制台：本地 HTTP 服务 + 一个静态页面，没有 npm 依赖
+├── xuexitong/             学习通（来自 lmmmp-17/xuexitongScript）
+├── yuketang/              长江雨课堂（来自 lmmmp-17/yuketang）
+├── autovisor/             智慧树（来自 lmmmp-17/Autovisor）
+└── scripts/
+    └── sync-from-forks.sh 从三个 fork 同步更新
+```
+
+### 测试
+
+```bash
+node --test launcher/tests/unit.test.mjs                       # 控制台
+(cd xuexitong/playwright && npm test)                          # 学习通：单元 + 端到端（需要本机 Chrome）
+(cd yuketang/playwright && npm test)                           # 雨课堂：同上
+(cd autovisor && uv run python -m unittest discover -s tests)  # 智慧树
+```
+
+### 授权
+
+各目录沿用原项目的授权：`autovisor/` 是 MIT（见 [autovisor/LICENSE](autovisor/LICENSE)）；学习通和雨课堂的上游没有声明许可证。
+
+---
+
+本项目仅用于学习和研究，请遵守学校与平台的相关规定。
