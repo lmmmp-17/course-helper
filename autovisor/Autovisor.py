@@ -5,6 +5,7 @@ import os
 import platform
 import sys
 import time
+from urllib.parse import urlparse
 
 from playwright.async_api import BrowserContext, Page, TimeoutError, async_playwright
 from playwright._impl._errors import TargetClosedError
@@ -61,6 +62,39 @@ ZHS_COOKIE_URLS = [
     "https://fusioncourseh5.zhihuishu.com",
     "https://hike.zhihuishu.com",
 ]
+
+
+# 课程播放页所在的几个站点: 新版(智慧)共享课、旧版、融合课、翻转课
+COURSE_HOSTS = {
+    "studyvideoh5.zhihuishu.com",
+    "studywisdomh5.zhihuishu.com",
+    "fusioncourseh5.zhihuishu.com",
+    "hike.zhihuishu.com",
+}
+
+
+def is_course_page(url: str) -> bool:
+    return (urlparse(url).hostname or "") in COURSE_HOSTS
+
+
+async def wait_for_course_page(context: BrowserContext, page: Page, poll_seconds: float = 1.5) -> str:
+    """没给课程地址时, 等用户在浏览器里自己点开一门课, 和学习通、雨课堂两个工具一样。
+
+    智慧树的课程列表点课程会开一个新标签页。后台任务(续播、弹题、倍速)都绑在主标签页上,
+    所以记下地址、关掉新标签页, 回到主标签页里打开同一个地址。
+    """
+    logger.info("请在浏览器里点开要刷的课程, 进到能看到视频的播放页, 打开后会自动开始.")
+    while True:
+        for candidate in list(context.pages):
+            if candidate.is_closed() or not is_course_page(candidate.url):
+                continue
+            course_url = candidate.url
+            logger.event("选择课程", 地址=course_url, 新标签页=candidate is not page)
+            if candidate is not page:
+                await candidate.close()
+                await page.bring_to_front()
+            return course_url
+        await asyncio.sleep(poll_seconds)
 
 
 _saved_cookies = None
@@ -188,7 +222,7 @@ async def ensure_login(
     return False
 
 
-async def main(config) -> bool:
+async def main(config, wait_course: bool = False) -> bool:
     modules, tasks = [], []
     playback_enabled = asyncio.Event()
     all_courses_complete = True
@@ -238,8 +272,13 @@ async def main(config) -> bool:
                 logger.info("已连接现有 Chrome, 不隐藏用户自己的浏览器窗口.")
             monitor_task = asyncio.create_task(task_monitor(tasks))
 
-            course_total = len(config.course_urls)
-            for index, course_url in enumerate(config.course_urls, 1):
+            # 没配课程地址(或者从启动器来, 指定了 --wait-course): 等用户自己点开一门课
+            course_urls = [] if wait_course else list(config.course_urls)
+            if not course_urls:
+                logger.section("选择课程")
+                course_urls = [await wait_for_course_page(context, page)]
+            course_total = len(course_urls)
+            for index, course_url in enumerate(course_urls, 1):
                 logger.section(f"课程 {index}/{course_total}")
                 logger.context(课程序号=f"{index}/{course_total}", 课程地址=course_url)
                 logger.info("正在加载播放页...")
@@ -356,6 +395,11 @@ def parse_args():
         help="配合 --check-quiz: 先跳到指定秒数, 省去等弹题的时间",
     )
     parser.add_argument(
+        "--wait-course",
+        action="store_true",
+        help="不用配置里的课程地址, 打开浏览器后等你自己点开一门课(统一启动器用的就是这种方式)",
+    )
+    parser.add_argument(
         "--import-cookies",
         metavar="PATH",
         help="从 Requests CookieJar JSON 安全导入未过期的智慧树 Cookie",
@@ -427,10 +471,7 @@ def cli() -> int:
             return asyncio.run(
                 check_course(args.check_course, config, logger, COOKIE_PATH)
             )
-        if not config.course_urls:
-            logger.error("未检测到有效网址或不支持此类网页,请检查配置文件!")
-            return 2
-        if not asyncio.run(main(config)):
+        if not asyncio.run(main(config, wait_course=args.wait_course)):
             exit_code = 1
     except TargetClosedError as exc:
         if "BrowserType.launch" in repr(exc):

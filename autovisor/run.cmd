@@ -1,23 +1,51 @@
 @echo off
 setlocal
+rem ---------------------------------------------------------------------------
+rem Everything above :main must stay ASCII. cmd reads a batch file line by line
+rem in the console's code page, and switching to UTF-8 halfway shifts the lines
+rem that follow (on a GBK console the Chinese comments below were run as
+rem commands). So when the console is not UTF-8 yet, switch it and run this
+rem file again in a fresh cmd, which then reads it from the top in UTF-8.
+rem ---------------------------------------------------------------------------
+if "%COURSE_CMD_SELF%"=="%~f0" goto :inner
 for /f "tokens=2 delims=:." %%c in ('chcp') do set "OLDCP=%%c"
+set "OLDCP=%OLDCP: =%"
+rem Pause at the end only when double-clicked, so an error doesn't vanish with
+rem the window. Never under the launcher (COURSE_UI=1): its stdin is a pipe
+rem that stays open, so pause would wait forever and the run would never end.
+set "PAUSE_AT_END="
+if "%COURSE_UI%"=="1" goto :no_pause
+echo %cmdcmdline% | findstr /i /c:"%~nx0" >nul && set "PAUSE_AT_END=1"
+:no_pause
+if "%OLDCP%"=="65001" goto :here
 chcp 65001 >nul
+set "COURSE_CMD_SELF=%~f0"
+cmd /d /c ""%~f0" %*"
+set "CODE=%errorlevel%"
+chcp %OLDCP% >nul
+goto :done
+:here
+call :main %*
+set "CODE=%errorlevel%"
+:done
+if defined PAUSE_AT_END pause
+exit /b %CODE%
+
+:inner
+call :main %*
+exit /b %errorlevel%
+
+:main
 rem Autovisor 的 Windows 源码运行入口：双击运行即可。
-rem 第一次运行会生成配置文件 config.ini；填好课程地址后再运行，会自动准备 Python 环境并开始。
+rem 第一次运行会从模板生成配置文件 config.ini，自动准备 Python 环境，然后打开浏览器。
+rem 课程地址可以不填：登录后在浏览器里点开一门课就会开始。
 rem 参数原样传给 Autovisor.py，比如在命令行里 run.cmd --check-browser
 cd /d "%~dp0"
 
-rem 双击打开的窗口在结束时停一下，不然报错一闪就没了
-set "PAUSE_AT_END="
-echo %cmdcmdline% | findstr /i /c:"%~nx0" >nul && set "PAUSE_AT_END=1"
 set "CONFIG=config.ini"
 
-rem 1. 配置文件：没有就从模板生成，用记事本打开让用户填课程地址
-if not exist "%CONFIG%" goto :new_config
-rem 正式运行（不带参数）却没填课程地址：先说清楚
-if "%~1"=="" (
-    findstr /r /i /c:"^ *URL[0-9n]* *= *https://" "%CONFIG%" >nul || goto :need_url
-)
+rem 1. 配置文件：没有就从模板生成一份，接着往下跑
+if not exist "%CONFIG%" copy /y config.ini.example "%CONFIG%" >nul
 
 rem 2. uv：用来准备 Python 和依赖（不用自己装 Python）
 where uv >nul 2>nul
@@ -36,21 +64,6 @@ rem 4. 运行
 uv run python -u Autovisor.py %*
 set "CODE=%errorlevel%"
 goto :end
-
-:new_config
-copy /y config.ini.example "%CONFIG%" >nul
-echo [setup] 已生成配置文件 %CONFIG%，正在用记事本打开。
-echo         在 [course-url] 下面把 URL1 填成课程播放页的地址（能直接看到视频的那一页），
-echo         保存后再运行一次 run.cmd。
-start "" notepad "%CONFIG%"
-set "CODE=0"
-goto :end
-
-:need_url
-echo [提示] %CONFIG% 里还没有填课程地址，正在用记事本打开。
-echo        在 [course-url] 下面把 URL1 填成课程播放页的地址，保存后再运行 run.cmd。
-start "" notepad "%CONFIG%"
-goto :fail
 
 :install_uv
 echo 没找到 uv（用来准备 Python 环境和依赖）。
@@ -72,6 +85,4 @@ goto :fail
 :fail
 set "CODE=1"
 :end
-if defined PAUSE_AT_END pause
-chcp %OLDCP% >nul
 exit /b %CODE%

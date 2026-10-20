@@ -28,6 +28,8 @@ limitSpeed = max
 soundOff = True
 
 [course-url]
+;要学习的课程播放页地址(能直接看到视频的那一页),可继续添加多个
+;全部留空也行: 运行后在打开的浏览器里自己点开一门课, 会自动开始
 URL1 =
 URL2 =
 URL3 =
