@@ -1,0 +1,85 @@
+name: Cross-platform
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-platform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      # 真实浏览器的端到端测试(tests/test_e2e_browser.py)需要图形环境,
+      # 这里不设 AUTOVISOR_E2E, 由测试自己跳过
+      - name: Unit tests
+        run: uv run python -m unittest discover -s tests -v
+
+  launcher:
+    name: launcher (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            entry: run.sh
+          # macOS 走旧入口, 顺带验证 run_macos.sh 这个包装脚本
+          - os: macos-latest
+            platform: macos
+            entry: run_macos.sh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Prepare config
+        run: cp config.${{ matrix.platform }}.ini.example config.${{ matrix.platform }}.ini
+
+      - name: First run deploys the environment
+        run: |
+          out=$(bash ./${{ matrix.entry }} --help)
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "usage: Autovisor.py"
+          test -f .autovisor/env.ready
+          python3 -c "import os, stat; m = stat.S_IMODE(os.stat('config.${{ matrix.platform }}.ini').st_mode); assert m == 0o600, oct(m)"
+
+      - name: Second run reuses ready environment
+        run: |
+          out=$(bash ./${{ matrix.entry }} --help)
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "环境已就绪"

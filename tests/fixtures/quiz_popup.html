@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>课中弹题(桩)</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  /* 页面上同时存在多个 .el-dialog, 大多隐藏——照真实页面来, 这样
+     "按 .el-dialog 定位会打错元素"这个 bug 在桩上也能复现 */
+  .el-dialog__wrapper { display: none; }
+  .el-dialog__wrapper.shown { display: block; }
+  .el-dialog { width: 630px; border: 1px solid #999; margin: 12px; }
+  .el-dialog__header { padding: 10px; border-bottom: 1px solid #eee; position: relative; }
+  .el-dialog__headerbtn { position: absolute; right: 10px; top: 10px; width: 18px; height: 20px;
+    border: 0; background: #ddd; cursor: pointer; }
+  .el-dialog__body { padding: 10px; }
+  .el-dialog__footer { padding: 10px; text-align: right; }
+  .dialog-footer .btn { display: inline-block; width: 102px; height: 24px; line-height: 24px;
+    text-align: center; border: 1px solid #888; cursor: pointer; }
+  .el-pager { list-style: none; display: flex; gap: 6px; padding: 0; }
+  .number { width: 24px; height: 24px; line-height: 24px; text-align: center;
+    border: 1px solid #888; cursor: pointer; }
+  .number.active { background: #e3f2fd; }
+  .topic-list { list-style: none; padding: 0; }
+  .topic-item { height: 50px; line-height: 50px; padding-left: 8px; border: 1px solid #bbb;
+    margin-bottom: 4px; cursor: pointer; }
+  .topic-item.chosen { background: #d7f0d7; }
+  .answer { color: #2a2; }
+</style>
+</head>
+<body>
+<!-- 隐藏的干扰弹窗: 真实页面上有 12 个 .el-dialog, 第一个是"温馨提示" -->
+<div class="el-dialog__wrapper">
+  <div class="el-dialog">
+    <div class="el-dialog__header"><span class="el-dialog__title">温馨提示</span>
+      <button class="el-dialog__headerbtn"></button></div>
+    <div class="el-dialog__footer"><span class="dialog-footer">
+      <div class="btn">我知道了</div></span></div>
+  </div>
+</div>
+
+<div id="playTopic-dialog" class="el-dialog__wrapper dialog-test shown">
+  <div class="el-dialog">
+    <div class="el-dialog__header">
+      <h4>AI助教小智给你出题啦！</h4>
+      <p>弹题是为了帮助同学们巩固知识点，不会影响到大家作业和考试的成绩。</p>
+      <button class="el-dialog__headerbtn"></button>
+    </div>
+    <div class="el-dialog__body">
+      <div class="el-scrollbar"><div class="el-scrollbar__wrap"><div class="el-scrollbar__view">
+        <div class="topic">
+          <div class="el-pagination"><ul class="el-pager"></ul></div>
+          <div class="radio">
+            <p class="topic-title"><span class="title-tit"></span><span class="title-text"></span></p>
+            <ul class="topic-list"></ul>
+            <div class="answer-wrap"></div>
+          </div>
+        </div>
+      </div></div></div>
+    </div>
+    <div class="el-dialog__footer"><span class="dialog-footer"><div class="btn">关闭</div></span></div>
+  </div>
+</div>
+
+<script>
+/* 只接受 isTrusted 的事件。记录每道题选中了哪些位置, 以及点击次数。 */
+const QUESTIONS = [
+  { kind: '【多选题】', text: '以下哪些属于心理过程？', options: 3 },
+  { kind: '【单选题】', text: '下面哪一项是对的？',     options: 4 },
+  { kind: '【多选题】', text: '可以多选的题',           options: 5 },
+];
+const probe = { rejected: [], picks: {}, clicks: [], escapes: 0, closed: false,
+                optionCounts: QUESTIONS.map(q => q.options),
+                kinds: QUESTIONS.map(q => q.kind) };
+window.__probe = probe;
+const trusted = (fn) => (e) => {
+  if (!e.isTrusted) { probe.rejected.push(e.type + ':' + (e.target.className || e.target.tagName)); return; }
+  fn(e);
+};
+
+let current = 0;
+const answers = {};                      /* 题号 -> 选中的下标数组 */
+
+const pager = document.querySelector('#playTopic-dialog .el-pager');
+QUESTIONS.forEach((_, i) => {
+  const li = document.createElement('li');
+  li.className = 'number';
+  li.textContent = String(i + 1);
+  li.addEventListener('click', trusted(() => { current = i; render(); }));
+  pager.appendChild(li);
+});
+
+function render() {
+  const q = QUESTIONS[current];
+  document.querySelectorAll('#playTopic-dialog .number')
+    .forEach((n, i) => n.classList.toggle('active', i === current));
+  document.querySelector('#playTopic-dialog .title-tit').textContent = q.kind;
+  document.querySelector('#playTopic-dialog .title-text').textContent = q.text;
+  const list = document.querySelector('#playTopic-dialog .topic-list');
+  list.textContent = '';
+  const chosen = answers[current] || [];
+  for (let i = 0; i < q.options; i++) {
+    const li = document.createElement('li');
+    li.className = 'topic-item' + (chosen.includes(i) ? ' chosen' : '');
+    li.textContent = 'ABCDE'[i] + '.选项';
+    li.addEventListener('click', trusted(() => {
+      const set = new Set(answers[current] || []);
+      if (q.kind.includes('多选')) { set.has(i) ? set.delete(i) : set.add(i); }
+      else { set.clear(); set.add(i); }
+      answers[current] = [...set].sort();
+      probe.picks[current] = answers[current];
+      probe.clicks.push(current + ':' + i);
+      render();
+    }));
+    list.appendChild(li);
+  }
+  /* 作答之后才出现 .answer, 并且它在 .topic 内部 */
+  document.querySelector('#playTopic-dialog .answer-wrap').innerHTML =
+    chosen.length ? '<p class="answer">正确答案：A</p>' : '';
+}
+render();
+
+document.addEventListener('keydown', trusted((e) => {
+  if (e.key === 'Escape') probe.escapes += 1;
+}));
+const close = () => {
+  document.getElementById('playTopic-dialog').classList.remove('shown');
+  probe.closed = true;
+};
+document.querySelector('#playTopic-dialog .dialog-footer .btn')
+  .addEventListener('click', trusted(close));
+document.querySelector('#playTopic-dialog .el-dialog__headerbtn')
+  .addEventListener('click', trusted(close));
+</script>
+</body>
+</html>

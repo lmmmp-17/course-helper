@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>智慧树-模拟课程页</title>
+<style>
+  body { margin: 0; font-family: sans-serif; display: flex; gap: 24px; padding: 16px; }
+  .col { width: 320px; }
+  .studytime-div { border: 1px solid #999; padding: 12px; margin-bottom: 12px; }
+  .iconfont.iconguanbi { display: inline-block; width: 28px; height: 28px; background: #ddd; cursor: pointer; }
+  .Patternbtn-div { width: 90px; height: 30px; background: #eee; cursor: pointer; margin-bottom: 12px; }
+  input[type=text], input[type=password] { display: block; width: 260px; height: 28px; margin-bottom: 8px; }
+  /* Element UI: 原始 input 被藏起来, 只露出 .el-checkbox__inner 那个方框 */
+  .el-checkbox { display: inline-flex; align-items: center; cursor: pointer; }
+  .el-checkbox__input { position: relative; display: inline-block; }
+  .el-checkbox__inner { display: inline-block; width: 16px; height: 16px; border: 1px solid #666; }
+  .el-checkbox__original { opacity: 0; outline: none; position: absolute; margin: 0; width: 0; height: 0; z-index: -1; }
+  .el-checkbox__label { padding-left: 8px; }
+  .wall-sub-btn { width: 120px; height: 34px; margin-top: 8px; }
+  /* 课时目录: 自己的滚动容器, 最后一节在可视区之外 */
+  .catalog { height: 260px; overflow-y: auto; border: 1px solid #ccc; }
+  .lesson { height: 46px; line-height: 46px; padding-left: 8px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+  .lesson.active { background: #e3f2fd; }
+  .el-collapse-item__header { height: 36px; line-height: 36px; background: #fafafa; cursor: pointer; border-bottom: 1px solid #eee; }
+  .el-collapse-item__wrap { display: none; }
+  .el-collapse-item.is-active .el-collapse-item__wrap { display: block; }
+  .ai-class-exercise-dialog { border: 1px solid #333; padding: 12px; margin-top: 12px; }
+  .ai-class-exercise-dialog .option { padding: 8px; border: 1px solid #aaa; margin-bottom: 6px; cursor: pointer; }
+  .ai-class-exercise-dialog.closed { display: none; }
+</style>
+</head>
+<body>
+<div class="col">
+  <div class="studytime-div">学前必读 <span class="iconfont iconguanbi"></span></div>
+  <div class="Patternbtn-div">夜间模式</div>
+
+  <input id="lUsername" type="text" name="mobile">
+  <input id="lPassword" type="password">
+  <label class="el-checkbox">
+    <span class="el-checkbox__input"><span class="el-checkbox__inner"></span><input type="checkbox" class="el-checkbox__original"></span>
+    <span class="el-checkbox__label">我已阅读并同意<a href="#agreement">《用户协议》</a></span>
+  </label>
+  <button class="wall-sub-btn" type="button">登录</button>
+</div>
+
+<div class="col">
+  <div class="catalog" id="catalog"></div>
+</div>
+
+<div class="col">
+  <div class="el-collapse">
+    <div class="el-collapse-item"><div class="el-collapse-item__header">第一章</div><div class="el-collapse-item__wrap">…</div></div>
+    <div class="el-collapse-item"><div class="el-collapse-item__header">第二章</div><div class="el-collapse-item__wrap">…</div></div>
+    <div class="el-collapse-item"><div class="el-collapse-item__header">第三章</div><div class="el-collapse-item__wrap">…</div></div>
+  </div>
+  <div class="ai-class-exercise-dialog">
+    <div class="option">A</div>
+    <div class="option">B</div>
+    <div class="el-dialog__footer"><button class="el-button" type="button">提交</button></div>
+  </div>
+</div>
+
+<script>
+/* 只接受 isTrusted 的事件。合成事件记进 rejected 且不产生任何效果——
+ * 测试通过即说明这些操作都是浏览器自己构造的输入。 */
+const probe = { rejected: [], log: [], keydowns: 0, keys: [], wheels: 0, blurs: 0 };
+window.__probe = probe;
+const trusted = (fn) => (e) => {
+  if (!e.isTrusted) { probe.rejected.push(e.type + ':' + (e.target.className || e.target.id)); return; }
+  fn(e);
+};
+
+document.addEventListener('wheel', trusted(() => { probe.wheels += 1; }), { passive: true });
+document.addEventListener('keydown', trusted((e) => { probe.keydowns += 1; probe.keys.push(e.key + '@' + (e.target.id || e.target.tagName)); }));
+window.addEventListener('blur', () => { probe.blurs += 1; });
+
+document.querySelector('.iconguanbi').addEventListener('click', trusted(() => {
+  document.querySelector('.studytime-div').style.display = 'none';
+  probe.log.push('popup-closed');
+}));
+document.querySelector('.Patternbtn-div').addEventListener('click', trusted(() => probe.log.push('night-mode')));
+
+const box = document.querySelector('.el-checkbox__original');
+box.addEventListener('click', trusted(() => probe.log.push('terms-clicked')));
+document.querySelector('a[href="#agreement"]').addEventListener('click', () => probe.log.push('agreement-link'));
+document.querySelector('.wall-sub-btn').addEventListener('click', trusted(() => probe.log.push('submit')));
+
+const catalog = document.getElementById('catalog');
+for (let i = 1; i <= 14; i += 1) {
+  const item = document.createElement('div');
+  item.className = 'lesson';
+  item.textContent = '第' + i + '节';
+  item.addEventListener('click', trusted(() => {
+    document.querySelectorAll('.lesson').forEach((el) => el.classList.remove('active'));
+    item.classList.add('active');
+    probe.log.push('lesson:' + i);
+  }));
+  catalog.appendChild(item);
+}
+
+document.querySelectorAll('.el-collapse-item__header').forEach((header) => {
+  header.addEventListener('click', trusted(() => header.parentElement.classList.toggle('is-active')));
+});
+
+const dialog = document.querySelector('.ai-class-exercise-dialog');
+dialog.querySelectorAll('.option').forEach((opt) => {
+  opt.addEventListener('click', trusted(() => probe.log.push('ai-option:' + opt.textContent)));
+});
+dialog.querySelector('.el-button').addEventListener('click', trusted(() => {
+  dialog.classList.add('closed');
+  probe.log.push('ai-submit');
+}));
+</script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>课程学习_智慧树(播放器桩)</title>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  .videoArea { position: relative; width: 760px; height: 420px; background: #111; }
+  video { width: 100%; height: 380px; display: block; background: #000; }
+  /* 控制栏默认收起: 和线上一样, 指针移到视频区域才展开 */
+  .controlBar { position: absolute; left: 0; bottom: 0; width: 100%; height: 40px;
+    display: flex; align-items: center; gap: 12px; background: #222; color: #fff;
+    opacity: 0; pointer-events: none; transition: opacity .15s; }
+  .videoArea:hover .controlBar { opacity: 1; pointer-events: auto; }
+  .volumeBox { position: relative; width: 48px; height: 40px; cursor: pointer; }
+  .volumeIcon { width: 48px; height: 40px; cursor: pointer; background: #444; }
+  .volumeBox.volumeNone .volumeIcon { background: #822; }
+  .speedBox { position: relative; width: 72px; height: 40px; cursor: pointer; }
+  .speedBox > span { display: block; width: 48px; height: 28px; line-height: 28px;
+    text-align: center; cursor: pointer; }
+  /* 倍速选项同样要悬停 .speedBox 才出现 */
+  .speedList { position: absolute; bottom: 40px; left: 0; width: 72px;
+    background: #333; display: none; }
+  .speedBox:hover .speedList { display: block; }
+  .speedTab { height: 28px; line-height: 28px; text-align: center; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="videoArea">
+  <video id="video_html5_api"></video>
+  <div class="controlBar">
+    <div class="volumeBox"><div class="volumeIcon"></div>
+      <div class="volumeBarWrap"><div class="volumeBar"></div></div>
+    </div>
+    <div class="speedBox"><span>X 1.0</span>
+      <div class="speedList">
+        <!-- 线上就是这个顺序, 且类名后缀与倍速值对不上 -->
+        <div class="speedTab speedTab15">X 1.5</div>
+        <div class="speedTab speedTab10">X 1.25</div>
+        <div class="speedTab speedTab05">X 1.0</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* 只接受 isTrusted 的事件, 合成事件记进 rejected 且不生效。
+ * 视频用实例属性遮蔽原型 accessor 伪造出可播放状态, 不需要真实媒体文件。 */
+const probe = { rejected: [], log: [] };
+window.__probe = probe;
+const trusted = (fn) => (e) => {
+  if (!e.isTrusted) { probe.rejected.push(e.type + ':' + (e.target.className || e.target.tagName)); return; }
+  fn(e);
+};
+
+const video = document.getElementById('video_html5_api');
+let at = 0, paused = true, rate = 1.0, muted = false, volume = 0.5;
+const def = (name, get) => Object.defineProperty(video, name, { get, configurable: true });
+def('currentTime', () => at);
+def('duration', () => 600);
+def('paused', () => paused);
+def('ended', () => false);
+def('readyState', () => 4);
+Object.defineProperty(video, 'playbackRate', {
+  get: () => rate,
+  set: (v) => { rate = v; probe.log.push('rate-write:' + v); },  // 写属性 = 退回了旧做法
+  configurable: true,
+});
+Object.defineProperty(video, 'muted', { get: () => muted, set: (v) => { muted = v; probe.log.push('muted-write'); }, configurable: true });
+Object.defineProperty(video, 'volume', { get: () => volume, set: (v) => { volume = v; probe.log.push('volume-write:' + v); }, configurable: true });
+video.play = () => { paused = false; probe.log.push('scripted-play'); return Promise.resolve(); };
+
+/* 点视频区域 = 播放/暂停开关 */
+document.querySelector('.videoArea').addEventListener('click', trusted((e) => {
+  if (e.target.closest('.controlBar')) return;   // 控制栏上的点击不算
+  paused = !paused;
+  probe.log.push(paused ? 'click-pause' : 'click-play');
+}));
+
+/* 音量按钮 = 静音开关, 图标由播放器自己切 */
+document.querySelector('.volumeIcon').addEventListener('click', trusted(() => {
+  muted = !muted;
+  document.querySelector('.volumeBox').classList.toggle('volumeNone', muted);
+  probe.log.push(muted ? 'click-mute' : 'click-unmute');
+}));
+
+/* 倍速选项 = 设置倍速, 标签由播放器自己更新 */
+document.querySelectorAll('.speedTab').forEach((tab) => {
+  tab.addEventListener('click', trusted(() => {
+    rate = parseFloat(tab.textContent.replace('X', '').trim());
+    document.querySelector('.speedBox > span').textContent = 'X ' + rate.toFixed(rate % 1 ? 2 : 1);
+    probe.log.push('click-rate:' + rate);
+  }));
+});
+
+setInterval(() => { if (!paused && at < 600) at += 0.2; }, 100);
+</script>
+</body>
+</html>
