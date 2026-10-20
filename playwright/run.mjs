@@ -14,6 +14,7 @@ import { hardenFocus, noteOnVisibility } from './src/environment.mjs';
 import { inspectPage } from './src/inspect.mjs';
 import { isAllowedUrl } from './src/selectors.mjs';
 import { ensureInstalled } from './src/setup.mjs';
+import { watchStdinForStop } from './src/stop-signal.mjs';
 
 /* 进程退出前最后打印的一句，见下面 finally 里的说明 */
 let parting = '';
@@ -26,18 +27,21 @@ async function main() {
     }
 
     const log = createLogger(config.logLevel);
-    /* 第一次运行（或 --setup）先把依赖装上，用户不用单独执行 npm install */
-    ensureInstalled(log, { force: setup });
-
-    const session = await openBrowser(config, log);
     let runner = null;
     /* 等用户打开课程页的时候还没有 runner，Ctrl+C 要能直接退出 */
     const abort = { stopped: false };
-
     const shutdown = () => {
         abort.stopped = true;
         if (runner) runner.stop('收到中断信号');
     };
+    /* 从统一启动器启动时，它关掉 stdin 就是让我们停（见 stop-signal.mjs）。
+     * 最先挂上：装依赖、开浏览器的时候点了停止也不会漏掉。 */
+    const unwatchStop = process.env.COURSE_UI === '1' ? watchStdinForStop(process.stdin, shutdown) : () => {};
+
+    /* 第一次运行（或 --setup）先把依赖装上，用户不用单独执行 npm install */
+    ensureInstalled(log, { force: setup });
+
+    const session = await openBrowser(config, log);
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
 
@@ -47,7 +51,8 @@ async function main() {
             if (abort.stopped) return null;
             throw error;
         });
-        if (!page) {
+        /* 开浏览器、找页面的时候已经让停了：页面就算已经开着也别开始 */
+        if (!page || abort.stopped) {
             log.say('已退出');
             return 0;
         }
@@ -84,6 +89,11 @@ async function main() {
             return probe && probe.isTrusted ? 0 : 1;
         }
 
+        /* 焦点模拟这些准备工作期间点了停止：不开始跑，连开场的指针微动也不做 */
+        if (abort.stopped) {
+            log.say('已退出');
+            return 0;
+        }
         runner = new CourseRunner({ page, pointer, config, log });
         try {
             await runner.run();
@@ -102,6 +112,7 @@ async function main() {
     } finally {
         process.off('SIGINT', shutdown);
         process.off('SIGTERM', shutdown);
+        unwatchStop();
         /* close() 里已经区分了“自己启动的要关掉”和“连上去的只断开” */
         await session.close();
         /* 这句要排在错误信息后面, 所以留到进程退出前再打 */
