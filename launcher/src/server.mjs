@@ -15,7 +15,7 @@ import { describe, byId } from './tools.mjs';
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };
 
-export async function startServer({ root, runner, publicDir, port = 0, token = randomBytes(16).toString('hex') }) {
+export async function startServer({ root, runner, publicDir, settings = null, port = 0, token = randomBytes(16).toString('hex') }) {
     const send = (res, code, body, type = 'application/json; charset=utf-8') => {
         res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' });
         res.end(typeof body === 'string' ? body : JSON.stringify(body));
@@ -35,7 +35,19 @@ export async function startServer({ root, runner, publicDir, port = 0, token = r
         }
 
         if (url.pathname === '/api/tools') {
-            return send(res, 200, { tools: describe(root), state: runner.state() });
+            /* 上次选的平台和填过的值，窗口版和终端版共用（settings.mjs） */
+            const saved = settings ? settings.read() : { picked: null, values: {} };
+            return send(res, 200, { tools: describe(root, process.platform, { remembered: saved.values }), state: runner.state(), picked: saved.picked });
+        }
+
+        if (url.pathname === '/api/pick' && req.method === 'POST') {
+            let body = '';
+            for await (const chunk of req) body += chunk;
+            let payload;
+            try { payload = JSON.parse(body || '{}'); } catch (e) { return send(res, 400, { error: '请求格式不对' }); }
+            if (!byId(payload.tool)) return send(res, 400, { error: '没有这个工具' });
+            try { settings?.pick(payload.tool); } catch (e) { /* 记不住就算了 */ }
+            return send(res, 200, { picked: payload.tool });
         }
 
         if (url.pathname === '/api/events') {

@@ -301,7 +301,6 @@ const el = (tag, props = {}, ...children) => {
 /* ---------- 状态 ---------- */
 /* 三个平台可以同时跑。每个平台各有一份：正在跑的、上次怎么停的、日志。
  * 页面上一次只展示选中的那个平台，切换平台不影响别的在跑。 */
-const STORE = 'course-launcher:v1';
 const MAX_LOG = 1000;
 const ui = {
   tools: [],
@@ -325,19 +324,18 @@ const runOf = (id) => (ui.runs[id] ??= blank());
 const cur = () => (ui.picked ? runOf(ui.picked.id) : blank());
 const running = () => ui.tools.filter((tool) => runOf(tool.id).run);
 
-const remembered = () => { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; } };
-const remember = (patch) => {
-  try { localStorage.setItem(STORE, JSON.stringify({ ...remembered(), ...patch })); } catch (e) { /* 隐私模式之类，记不住就算了 */ }
+/* 上次选的平台、填过的值存在后端（settings.json），窗口版和终端版共用，这里不再用 localStorage */
+const rememberPick = (id) => {
+  api('pick', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tool: id }) }).catch(() => {});
 };
 
 const keyOf = (option) => option.flag || option.key.join('.');
 const toolById = (id) => ui.tools.find((tool) => tool.id === id) || null;
 
-/* 预填的优先级：配置文件里已有的 > 上次在这里填的 > 登记表默认值 */
+/* 预填的优先级：工具自己的配置文件 > 上次填的（两个入口共用）> 登记表默认值 */
 function initialValue(tool, option) {
   if (option.current !== undefined) return option.current;
-  const stored = remembered().values?.[tool.id]?.[keyOf(option)];
-  if (stored !== undefined && option.type !== 'password') return stored;
+  if (option.remembered !== undefined && option.type !== 'password') return option.remembered;
   if (option.default !== undefined) return option.default;
   return option.type === 'bool' ? false : '';
 }
@@ -365,7 +363,7 @@ function renderSubjects() {
         ui.invalid.clear();
         runOf(tool.id).seen = true;
         $('error').textContent = '';
-        remember({ picked: tool.id });
+        rememberPick(tool.id);
         render({ log: true });
         swipe(name);
       },
@@ -689,9 +687,11 @@ async function start() {
     return;
   }
 
-  const kept = { ...picked };
-  for (const option of tool.options) if (option.type === 'password') delete kept[keyOf(option)];
-  remember({ picked: tool.id, values: { ...(remembered().values || {}), [tool.id]: kept } });
+  /* 后端启动成功时会记下这些值；这里同步改掉手上的那份，停了以后重画表单还是这次填的 */
+  for (const option of tool.options) {
+    const key = keyOf(option);
+    if (key in picked && option.type !== 'password') option.remembered = picked[key];
+  }
 
   state.starting = true;
   render();
@@ -806,7 +806,7 @@ if (!first) {
 } else {
   ui.tools = first.tools;
   const live = Object.values(first.state.runs || {}).find((run) => run.running);
-  ui.picked = toolById(remembered().picked) || toolById(live?.tool) || null;
+  ui.picked = toolById(first.picked) || toolById(live?.tool) || null;
   render();
   connect();
 }

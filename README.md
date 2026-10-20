@@ -174,7 +174,7 @@ course-helper/
 ### 测试
 
 ```bash
-node --test launcher/tests/unit.test.mjs                       # 控制台
+node --test launcher/tests/unit.test.mjs launcher/tests/backend.test.mjs   # 控制台
 (cd xuexitong/playwright && npm test)                          # 学习通：单元 + 端到端（需要本机 Chrome）
 (cd yuketang/playwright && npm test)                           # 雨课堂：同上
 (cd autovisor && uv run python -m unittest discover -s tests)  # 智慧树

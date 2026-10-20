@@ -175,10 +175,13 @@ export function locate(tool, root, platform = process.platform) {
     return { dir, entry, ready: existsSync(dir) && existsSync(resolve(dir, entry)) };
 }
 
-export function describe(root, platform = process.platform) {
+/* remembered：两个入口共用的设置里记着的值（见 settings.mjs），按工具 id 分。
+ * 预填的优先级：工具自己的配置文件（current）> 上次填的（remembered）> 登记表默认值 */
+export function describe(root, platform = process.platform, { remembered = {} } = {}) {
     return TOOLS.map((tool) => {
         const { dir, ready } = locate(tool, root, platform);
         const current = ready ? currentValues(tool, dir, platform) : {};
+        const last = remembered[tool.id] || {};
         return {
             id: tool.id,
             name: tool.name,
@@ -200,6 +203,7 @@ export function describe(root, platform = process.platform) {
                         shown.choices = option.choices.filter((choice) => !choice.platforms || choice.platforms.includes(platform));
                     }
                     if (key in current) shown.current = current[key];
+                    if (key in last && option.type !== 'password') shown.remembered = last[key];
                     return shown;
                 }),
         };

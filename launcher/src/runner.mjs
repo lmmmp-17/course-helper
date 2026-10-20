@@ -31,7 +31,7 @@ export function windowsCommand(script, args) {
 }
 const MAX_LINES = 400;
 
-export function createRunner({ root, platform = process.platform, spawnProcess = spawn, killProcess = process.kill } = {}) {
+export function createRunner({ root, platform = process.platform, spawnProcess = spawn, killProcess = process.kill, settings = null } = {}) {
     /* 按工具记：正在跑的那个进程，和上一次是怎么停的（刷新页面也能看到） */
     const runs = new Map();
     const listeners = new Set();
@@ -239,6 +239,8 @@ export function createRunner({ root, platform = process.platform, spawnProcess =
             };
             run.lastExit = null;
             run.lastLines = [];
+            /* 记下这次填的值，两个入口下次打开都能预填。写不进去不影响跑 */
+            try { settings?.remember(tool, values); } catch (e) { /* 配置目录不可写之类 */ }
             emit({ type: 'started', tool: tool.id, name: tool.name, startedAt: run.current.startedAt, values: run.current.values });
 
             child.stdout?.on('data', reader(run, false));
