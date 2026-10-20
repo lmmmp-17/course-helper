@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -71,6 +72,7 @@ var (
 	procIsWindow            = user32.NewProc("IsWindow")
 	procIsIconic            = user32.NewProc("IsIconic")
 	procGetDpiForSystem     = user32.NewProc("GetDpiForSystem")
+	procPostMessageW        = user32.NewProc("PostMessageW")
 
 	// GWLP_WNDPROC = -4
 	gwlpWndProc = ^uintptr(3)
@@ -327,7 +329,7 @@ func runWindow(consoleURL string) {
 
 	hwnd := uintptr(w.Window())
 	_ = os.WriteFile(filepath.Join(dataDir(), "window.hwnd"), []byte(strconv.FormatUint(uint64(hwnd), 10)), 0o644)
-	installCloseGuard(hwnd, consoleURL)
+	installCloseGuard(w, hwnd, consoleURL)
 
 	_ = w.Bind("courseHelperTitle", func(title string) {
 		if strings.TrimSpace(title) != "" {
@@ -339,29 +341,61 @@ func runWindow(consoleURL string) {
 	w.Run()
 }
 
-// 关窗口时还有平台在跑：先问一句
+// 关窗口时还有平台在跑：先问一句。
+//
+// 用页面里的确认框（设计稿里的样子）：截下 WM_CLOSE，请页面判断要不要问；页面先应一声
+// （courseHelperAck），用户点「全部停止并关闭」或者本来就没在跑，页面调 courseHelperClose，
+// 这里才真的关。页面 1.5 秒内没应声（脚本坏了、后端断了页面没加载出来之类），
+// 改用系统对话框问，保证窗口总能关掉。
 var (
 	previousProc uintptr
 	guardURL     string
+	guardView    webview2.WebView
+	guardHwnd    uintptr
+	closeAllowed atomic.Bool
+	askSeq       atomic.Int64
+	ackedSeq     atomic.Int64
 	guardProc    = windows.NewCallback(closeGuard)
 )
 
 func closeGuard(hwnd, msg, wp, lp uintptr) uintptr {
-	if msg == wmClose {
-		if names := runningTools(guardURL); len(names) > 0 {
-			text := fmt.Sprintf("还有 %d 个平台在跑（%s），关掉窗口会把它们都停掉。\n\n确定要关掉吗？",
-				len(names), strings.Join(names, "、"))
-			if messageBox(hwnd, text, mbOKCancel|mbIconWarning|mbDefButton2) != idOK {
-				return 0
+	if msg == wmClose && !closeAllowed.Load() {
+		seq := askSeq.Add(1)
+		guardView.Eval("window.courseHelperAskClose && window.courseHelperAskClose()")
+		go func() {
+			time.Sleep(1500 * time.Millisecond)
+			if ackedSeq.Load() < seq {
+				guardView.Dispatch(nativeConfirmClose)
 			}
-		}
+		}()
+		return 0
 	}
 	r, _, _ := procCallWindowProcW.Call(previousProc, hwnd, msg, wp, lp)
 	return r
 }
 
-func installCloseGuard(hwnd uintptr, consoleURL string) {
+func allowClose() {
+	closeAllowed.Store(true)
+	_, _, _ = procPostMessageW.Call(guardHwnd, wmClose, 0, 0)
+}
+
+func nativeConfirmClose() {
+	if names := runningTools(guardURL); len(names) > 0 {
+		text := fmt.Sprintf("还有 %d 个平台在跑（%s），关掉窗口会把它们都停掉。\n\n确定要关掉吗？",
+			len(names), strings.Join(names, "、"))
+		if messageBox(guardHwnd, text, mbOKCancel|mbIconWarning|mbDefButton2) != idOK {
+			return
+		}
+	}
+	allowClose()
+}
+
+func installCloseGuard(w webview2.WebView, hwnd uintptr, consoleURL string) {
 	guardURL = consoleURL
+	guardView = w
+	guardHwnd = hwnd
+	_ = w.Bind("courseHelperAck", func() { ackedSeq.Store(askSeq.Load()) })
+	_ = w.Bind("courseHelperClose", func() { allowClose() })
 	previousProc, _, _ = procSetWindowLongPtrW.Call(hwnd, gwlpWndProc, guardProc)
 }
 

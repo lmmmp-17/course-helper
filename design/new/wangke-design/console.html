@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>网课助手</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1' y='1' width='30' height='30' rx='7' fill='%231E2B4A'/%3E%3Cpath d='M5.2 10.6Q5 9.4 6.3 9.2L25.6 8Q27 7.9 27.1 9.3L27.6 21.2Q27.7 22.6 26.3 22.7L6.9 23.9Q5.6 24 5.5 22.7Z' fill='%23F2E35B'/%3E%3Cpath d='M13 11.4L13 20.6L21.2 16Z' fill='%231E2B4A' stroke='%231E2B4A' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E">
+<!--
+  网课助手 · 控制台原型（作业本 第二版）
+
+  一张作业本内页：横格是基线网格（文字都落在 28px 的格线上），左边页边放元信息——字段名、时间、已运行时长。
+  三支笔，各管一件事：
+    蓝黑墨水  正文
+    荧光笔    现在正在发生的事（选中的平台、当前状态）
+    红笔      错误，和老师改作业一样画波浪线
+  另加一支褐色铅笔，只用来标日志里的「注意」，和红笔的「出错」分开。
+
+  这个文件是原型：数据是假的，右下角的「原型」面板可以切出每一个状态。
+  接后端时：把 SCENES 和 sim 相关的代码删掉，换成原来 index.html 里的 /api/tools 和 /api/events 那一套，
+  ui / runs 的结构和原来一样（多了一个可选字段 phase，见 README 草稿）。
+  URL 参数：?state=three&theme=dark&bare=1（bare 隐藏原型面板、停掉假日志，截图用）
+-->
+<style>
+  :root {
+    --paper: #E9EDF1;      /* 窗口底色（桌面） */
+    --page: #FAFBFC;       /* 作业纸 */
+    --ink: #1E2B4A;        /* 蓝黑墨水：正文、主按钮 */
+    --ink-soft: #55637D;   /* 次要文字：说明、页边字段名 */
+    --ink-mute: #626F86;   /* 更次要：日志时间、占位符（仍过 4.5:1） */
+    --rule: #D8E1EA;       /* 横格线 */
+    --rule-strong: #B4C4D6;/* 页边竖线、纸张边框、输入下划线 */
+    --hl: #F2E35B;         /* 荧光笔 */
+    --pen: #C2362F;        /* 红笔：错误 */
+    --on-pen: #FFFFFF;     /* 红底上的字 */
+    --pencil: #8F5208;     /* 褐色铅笔：日志里的「注意」 */
+    --scrim: rgba(30, 43, 74, .38);
+    --shadow: 0 14px 40px rgba(30, 43, 74, .22);
+
+    --sans: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+            "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+    --mono: "Cascadia Mono", Consolas, "Noto Sans Mono CJK SC", ui-monospace, monospace;
+    --line: 28px;
+    --pad: 48px;
+    --margin: 9em;
+    --gap: 28px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #10151E;
+      --page: #171E2A;
+      --ink: #DDE4EE;
+      --ink-soft: #A0AEC1;
+      --ink-mute: #8391A6;
+      --rule: #232D3E;
+      --rule-strong: #36445C;
+      --hl: rgba(232, 214, 72, .36);
+      --pen: #F27D70;
+      --on-pen: #1A0F0E;
+      --pencil: #E3A857;
+      --scrim: rgba(5, 8, 14, .6);
+      --shadow: 0 14px 40px rgba(0, 0, 0, .5);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #10151E;
+    --page: #171E2A;
+    --ink: #DDE4EE;
+    --ink-soft: #A0AEC1;
+    --ink-mute: #8391A6;
+    --rule: #232D3E;
+    --rule-strong: #36445C;
+    --hl: rgba(232, 214, 72, .36);
+    --pen: #F27D70;
+    --on-pen: #1A0F0E;
+    --pencil: #E3A857;
+    --scrim: rgba(5, 8, 14, .6);
+    --shadow: 0 14px 40px rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    padding: var(--line) 20px var(--line);
+    background: var(--paper);
+    font: 15px/var(--line) var(--sans);
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+  [hidden] { display: none !important; }
+
+  /* ---------- 内页：横格 + 页边线 ---------- */
+  .sheet {
+    max-width: 1000px;
+    min-height: calc(100vh - var(--line) * 2);
+    margin: 0 auto;
+    padding: var(--line) var(--pad) var(--line);
+    background-color: var(--page);
+    background-image:
+      linear-gradient(var(--rule-strong), var(--rule-strong)),
+      repeating-linear-gradient(to bottom,
+        transparent 0 calc(var(--line) - 1px),
+        var(--rule) calc(var(--line) - 1px) var(--line));
+    background-size: 1px 100%, 100% 100%;
+    background-position: calc(var(--pad) + var(--margin) + var(--gap) / 2) 0, 0 var(--line);
+    background-repeat: no-repeat, repeat;
+    border: 1px solid var(--rule-strong);
+    border-radius: 2px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: var(--margin) minmax(0, 1fr);
+    column-gap: var(--gap);
+    margin: 0;
+  }
+  .margin { text-align: right; color: var(--ink-soft); overflow-wrap: anywhere; }
+  p { margin: 0; }
+
+  /* ---------- 抬头：书名 + 三个平台（像目录） ---------- */
+  .masthead { min-height: calc(var(--line) * 2); }
+  .masthead h1 { margin: 0; font-size: 15px; font-weight: 700; line-height: var(--line); color: var(--ink); }
+  .subjects { display: flex; flex-wrap: wrap; gap: 0 2em; }
+  .subject {
+    display: block;
+    height: calc(var(--line) * 2);
+    font: inherit;
+    color: var(--ink-soft);
+    background: none;
+    border: 0;
+    border-radius: 3px;
+    padding: 0 .3em;
+    margin: 0 -.3em;
+    text-align: left;
+    cursor: pointer;
+  }
+  .subject .name { font-size: 22px; font-weight: 600; line-height: var(--line); white-space: nowrap; }
+  .subject .st { display: block; min-height: var(--line); font-size: 13px; font-weight: 600; line-height: var(--line); white-space: nowrap; color: var(--ink-soft); }
+  .subject .name { display: block; }
+  .subject .st.on { color: var(--ink); }
+  .subject .st.pen { color: var(--pen); text-decoration: underline wavy var(--pen) 1px; text-underline-offset: 4px; }
+  .subject:hover:not(:disabled), .subject.live, .subject[aria-pressed="true"] { color: var(--ink); }
+  .subject.missing .name { color: var(--ink-mute); text-decoration: line-through 1.5px var(--ink-mute); }
+  .subject:disabled { cursor: default; color: var(--ink-mute); }
+
+  /* 荧光笔：只标正在发生的事。画上去的那一下只在状态变化时出现 */
+  .hl {
+    color: inherit;
+    background-image: linear-gradient(100deg,
+      transparent .12em, var(--hl) .3em, var(--hl) calc(100% - .35em), transparent calc(100% - .1em));
+    background-repeat: no-repeat;
+    background-position: 0 58%;
+    background-size: 100% 72%;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    padding: 0 .3em;
+    margin: 0 -.3em;
+    border-radius: .35em .6em .4em .7em / .5em .4em .6em .5em;
+    transition: background-size .5s cubic-bezier(.3, .7, .2, 1);
+  }
+  .hl.dry { background-size: 0% 72%; }
+
+  .lead { color: var(--ink-soft); }
+  .lead .path { color: var(--ink); font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+  .lead .pen-strong { color: var(--pen); font-weight: 600; }
+
+  /* ---------- 开始前：一行默认设置 + 静音，其余收起 ---------- */
+  .setup { margin-top: var(--line); }
+  .setup-head > .body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1.2em; }
+  .setup-text { color: var(--ink); }
+  .toggle {
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink-soft);
+    background: none;
+    border: 0;
+    padding: 0 .2em;
+    margin: 0 -.2em;
+    cursor: pointer;
+    text-decoration: underline 1px var(--rule-strong);
+    text-underline-offset: 5px;
+  }
+  .toggle:hover { color: var(--ink); text-decoration-color: var(--ink); }
+  .toggle svg { width: 10px; height: 10px; margin-left: .25em; vertical-align: 0; transition: transform .2s; }
+  .toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+  .field { min-height: var(--line); }
+  .field > .body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1em; }
+  .blank {
+    font: inherit;
+    color: var(--ink);
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--ink-mute);
+    border-radius: 0;
+    height: var(--line);
+    padding: 0 2px;
+    width: 22em;
+    max-width: 100%;
+  }
+  .blank.short { width: 6em; }
+  .blank::placeholder { color: var(--ink-mute); }
+  .blank:focus { outline: none; border-bottom: 2px solid var(--ink); }
+  .choices { display: flex; flex-wrap: wrap; gap: 0 1.4em; }
+  .choice, .check { display: inline-flex; align-items: center; gap: .4em; cursor: pointer; }
+  input[type="radio"], input[type="checkbox"] { accent-color: var(--ink); width: 15px; height: 15px; margin: 0; }
+  .help { font-size: 13px; color: var(--ink-soft); }
+  .mute-row .check { font-weight: 600; }
+
+  /* 红笔：错误、漏填、会外放声音 */
+  .pen { color: var(--pen); }
+  .wrong {
+    color: var(--pen);
+    font-weight: 600;
+    text-decoration: underline wavy var(--pen) 1px;
+    text-underline-offset: 5px;
+  }
+
+  /* ---------- 按钮 ---------- */
+  .actions { padding: 8px 0; margin-top: var(--line); }
+  .actions > .body, .summary > .body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .button {
+    font: 600 15px/1 var(--sans);
+    height: 40px;
+    padding: 0 1.6em;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid var(--ink);
+    white-space: nowrap;
+  }
+  .button.go { background: var(--ink); color: var(--page); }
+  .button.go:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 86%, var(--page)); }
+  .button.halt { background: var(--page); color: var(--ink); }
+  .button.halt:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, var(--page)); }
+  .button.danger { background: var(--pen); border-color: var(--pen); color: var(--on-pen); }
+  .button:disabled { opacity: .55; cursor: default; }
+  .mini {
+    font: 600 13px/1 var(--sans);
+    height: 24px;
+    padding: 0 .8em;
+    color: var(--ink);
+    background: var(--page);
+    border: 1px solid var(--rule-strong);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .mini:hover { border-color: var(--ink); }
+
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .blank:focus-visible { outline: none; }
+
+  /* ---------- 在跑：设置摘要 + 停止 ---------- */
+  .summary { padding: 8px 0; margin-top: var(--line); }
+  .summary .margin, .summary .body { line-height: 40px; }
+  .summary-text { flex: 1 1 auto; min-width: 0; color: var(--ink-soft); line-height: var(--line); }
+
+  /* ---------- 运行情况 ---------- */
+  .run { margin-top: var(--line); }
+  .status-row { min-height: calc(var(--line) * 2); align-items: center; }
+  .elapsed { line-height: var(--line); }
+  .elapsed b { display: block; font-size: 15px; font-weight: 600; color: var(--ink); }
+  .status {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: calc(var(--line) * 2);
+    overflow-wrap: anywhere;
+  }
+  .status.ended .hl { background-image: none; }
+  .status.failed { color: var(--pen); }
+  .status.failed .hl { text-decoration: underline wavy var(--pen) 1.5px; text-underline-offset: 9px; }
+  .note { color: var(--ink-soft); }
+  .note.prep { color: var(--ink); }
+
+  .logbar { margin-top: var(--line); }
+  .logbar > .margin { color: var(--ink-soft); }
+  .logbar > .body { display: flex; align-items: center; gap: 1em; font-size: 13px; color: var(--ink-soft); }
+  .log {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: max(calc(var(--line) * 4), calc(100vh - 456px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background-image: repeating-linear-gradient(to bottom,
+      transparent 0 calc(var(--line) - 1px), var(--rule) calc(var(--line) - 1px) var(--line));
+    background-attachment: local;
+  }
+  .log li { display: grid; grid-template-columns: var(--margin) minmax(0, 1fr); column-gap: var(--gap); }
+  .log time { text-align: right; font-size: 13px; color: var(--ink-mute); }
+  .log span { overflow-wrap: anywhere; white-space: pre-wrap; }
+  .log .warn time, .log .warn span { color: var(--pencil); }
+  .log .warn span::before { content: "! "; font-weight: 700; }
+  .log .error time { color: var(--pen); }
+  .log .error span { color: var(--pen); font-weight: 600; }
+  .log .error span::before { content: "✕ "; }
+
+  /* ---------- 关窗口确认 ---------- */
+  dialog {
+    width: min(30em, calc(100vw - 48px));
+    padding: var(--line) 32px calc(var(--line) - 8px);
+    color: var(--ink);
+    background: var(--page);
+    border: 1px solid var(--rule-strong);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: var(--scrim); }
+  dialog h2 { margin: 0; font-size: 17px; font-weight: 600; line-height: var(--line); }
+  dialog .who { color: var(--ink-soft); margin-top: 4px; }
+  dialog .who b { color: var(--ink); font-weight: 600; }
+  dialog .dlg-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: var(--line); }
+
+  /* ---------- 窄窗口（最小 720×560） ---------- */
+  @media (max-width: 860px) {
+    :root { --pad: 28px; --margin: 6.5em; --gap: 20px; }
+    body { padding-left: 12px; padding-right: 12px; }
+    .subjects { gap: 0 1.4em; }
+    .subject .name { font-size: 20px; }
+    .blank { width: 18em; }
+  }
+  @media (max-height: 640px) {
+    body { padding-top: 12px; padding-bottom: 12px; }
+    .sheet { min-height: calc(100vh - 24px); padding-top: 0; }
+    .log { max-height: max(calc(var(--line) * 4), calc(100vh - 400px)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hl, .toggle svg { transition: none; }
+  }
+
+  /* ---------- 原型面板（不属于设计，接后端时删掉） ---------- */
+  .proto {
+    position: fixed;
+    right: 10px;
+    bottom: 10px;
+    z-index: 5;
+    width: 300px;
+    font: 12px/1.5 var(--sans);
+    color: #E6EAF0;
+    background: #2A2F38;
+    border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .3);
+  }
+  .proto summary { cursor: pointer; padding: 6px 10px; font-weight: 600; }
+  .proto .in { padding: 0 10px 10px; display: grid; gap: 8px; }
+  .proto .btns { display: flex; flex-wrap: wrap; gap: 4px; }
+  .proto button {
+    font: 12px/1 var(--sans);
+    color: #E6EAF0;
+    background: #3A414D;
+    border: 1px solid #4B5463;
+    border-radius: 3px;
+    padding: 5px 7px;
+    cursor: pointer;
+  }
+  .proto button[aria-pressed="true"] { background: #F2E35B; color: #1E2B4A; border-color: #F2E35B; }
+  .proto .t { color: #A9B2C0; }
+  .proto code { font-family: var(--mono); color: #FFF; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main class="sheet">
+  <header class="row masthead">
+    <h1 class="margin">网课助手</h1>
+    <nav class="subjects" id="subjects" aria-label="平台"></nav>
+  </header>
+
+  <div class="row lead">
+    <span class="margin" id="lead-margin"></span>
+    <div id="lead" aria-live="polite"></div>
+  </div>
+
+  <section class="setup" id="setup" aria-label="设置"></section>
+
+  <div class="row actions" id="actions">
+    <span class="margin"></span>
+    <div class="body">
+      <button class="button go" id="start" type="button">开始</button>
+      <span class="wrong" id="error" role="alert"></span>
+    </div>
+  </div>
+
+  <div class="row summary" id="summary-row" hidden>
+    <span class="margin">这次的设置</span>
+    <div class="body">
+      <span class="summary-text" id="summary"></span>
+      <button class="button halt" id="stop" type="button">停止</button>
+      <span class="help" id="stop-help" hidden>一般几秒，最多 8 秒</span>
+    </div>
+  </div>
+
+  <section class="run" id="run" hidden aria-label="运行情况">
+    <div class="row status-row" id="status-row">
+      <span class="margin elapsed" id="elapsed"></span>
+      <p class="status" id="status" aria-live="polite"><span class="hl" id="status-text"></span></p>
+    </div>
+    <div class="row" id="note-row">
+      <span class="margin"></span>
+      <p class="note" id="note"></p>
+    </div>
+    <div class="row logbar">
+      <span class="margin">记录</span>
+      <div class="body">
+        <span id="fresh"></span>
+        <button class="mini" id="to-latest" type="button" hidden>回到最新</button>
+      </div>
+    </div>
+    <ol class="log" id="log" role="log" aria-label="运行记录"></ol>
+  </section>
+</main>
+
+<dialog id="confirm" aria-labelledby="confirm-title">
+  <h2 id="confirm-title"></h2>
+  <p class="who" id="confirm-who"></p>
+  <div class="dlg-actions">
+    <button class="button halt" id="confirm-cancel" type="button" autofocus>取消</button>
+    <button class="button danger" id="confirm-ok" type="button">全部停止并关闭</button>
+  </div>
+</dialog>
+
+<details class="proto" id="proto" open>
+  <summary>原型 · 切换状态</summary>
+  <div class="in">
+    <div class="btns" id="scene-btns"></div>
+    <div class="btns" id="theme-btns"></div>
+    <div><span class="t">窗口标题：</span><code id="win-title"></code></div>
+  </div>
+</details>
+
+<script>
+'use strict';
+const params = new URLSearchParams(location.search);
+const BARE = params.has('bare');
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...children) => {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
+  return node;
+};
+const MAX_LOG = 1000;
+
+/* ---------- 登记表（假数据，对应 GET /api/tools 里的 tools） ---------- */
+const SPEED = { flag: 'speed', label: '倍速', type: 'select', default: 'max',
+  choices: [{ value: 'max', label: '最高' }, { value: 'keep', label: '不改' }],
+  help: '最高 = 播放器倍速菜单里能选的最高一档' };
+const MUTE = { flag: 'mute', label: '静音', type: 'bool', default: true, role: 'mute' };
+const BROWSER_AUTO = { flag: 'browser', label: '浏览器', type: 'select', default: 'auto',
+  choices: [{ value: 'auto', label: '自动' }, { value: 'chrome', label: 'Chrome' }, { value: 'edge', label: 'Edge' }],
+  help: '自动 = 装了 Chrome 就用 Chrome，没有就用 Edge' };
+
+function registry() {
+  return [
+    { id: 'xuexitong', name: '学习通', ready: true, dir: 'D:\\网课助手\\tools\\xuexitong',
+      hint: '会自动打开一个专用的浏览器窗口。在里面登录学习通，点开课程的任意一节，脚本就开始。',
+      options: [
+        { flag: 'max', label: '最多播几节', type: 'number', placeholder: '留空 = 不限' },
+        { ...SPEED }, { ...MUTE },
+        { flag: 'stop-at-quiz', label: '遇到只剩测验的小节就停下', type: 'bool', default: false, help: '默认是跳过去找下一个有视频的小节' },
+        { ...BROWSER_AUTO },
+      ] },
+    { id: 'yuketang', name: '长江雨课堂', ready: true, dir: 'D:\\网课助手\\tools\\yuketang',
+      hint: '会自动打开一个专用的浏览器窗口。在里面登录雨课堂，点开课程里任意一个视频，脚本就开始。',
+      options: [
+        { flag: 'max', label: '最多学几项', type: 'number', placeholder: '留空 = 不限' },
+        { ...SPEED },
+        { flag: 'video-only', label: '只看视频，跳过图文', type: 'bool', default: false },
+        { ...MUTE }, { ...BROWSER_AUTO },
+      ] },
+    { id: 'zhihuishu', name: '智慧树', ready: true, dir: 'D:\\网课助手\\tools\\Autovisor',
+      hint: '会自动打开一个浏览器。在里面登录智慧树，点开要学的课程（进到能看到视频的播放页），脚本就开始。',
+      options: [
+        { ...SPEED },
+        { flag: 'minutes', label: '每门课最多跑几分钟', type: 'number', default: 30, help: '0 = 不限' },
+        { ...MUTE },
+        { flag: 'browser', label: '浏览器', type: 'select', default: 'edge',
+          choices: [{ value: 'edge', label: 'Edge' }, { value: 'chrome', label: 'Chrome' }], help: '选电脑上装着的那个' },
+        { flag: 'offscreen', label: '把浏览器窗口移出屏幕', type: 'bool', default: false, help: '看不见但照常播放。报窗口句柄错误时取消勾选' },
+        { flag: 'slider', label: '自动完成登录滑块', type: 'bool', default: false, help: '填了手机号和密码才用得上；第一次勾上会多装 numpy、opencv' },
+        { flag: 'phone', label: '手机号', type: 'text', placeholder: '留空则在浏览器里手动登录' },
+        { flag: 'password', label: '密码', type: 'password', placeholder: '留空则在浏览器里手动登录' },
+      ] },
+  ];
+}
+
+/* ---------- 状态 ---------- */
+const ui = { tools: [], picked: null, runs: {}, linked: true, blocked: false, invalid: new Set(), open: {} };
+const blank = () => ({
+  run: null,          /* 正在跑：{ startedAt, values } */
+  exit: null,         /* 上一次怎么停的：{ name, code, stopped, at } */
+  toolStatus: '',     /* status 事件 */
+  phase: '',          /* 'prepare' = 第一次装依赖（建议后端在 status 事件里带上） */
+  lastLine: '',
+  lastAt: 0,
+  lines: [],
+  starting: false,
+  stopping: false,
+  seen: true,         /* 中途停了、还没切过去看的，平台名下面一直标着「停了」 */
+});
+const runOf = (id) => (ui.runs[id] ??= blank());
+const cur = () => (ui.picked ? runOf(ui.picked.id) : blank());
+const running = () => ui.tools.filter((t) => runOf(t.id).run);
+const toolById = (id) => ui.tools.find((t) => t.id === id) || null;
+const keyOf = (o) => o.flag;
+
+function initialValue(option) {
+  if (option.remembered !== undefined && option.type !== 'password') return option.remembered;
+  if (option.default !== undefined) return option.default;
+  return option.type === 'bool' ? false : '';
+}
+
+/* ---------- 时间 ---------- */
+const clock = (at) => new Date(at).toTimeString().slice(0, 8);
+function since(start) {
+  const s = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  const h = Math.floor(s / 3600);
+  const m = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
+  return `${h ? `${h}:` : ''}${m}:${String(s % 60).padStart(2, '0')}`;
+}
+function ago(at) {
+  const s = Math.max(0, Math.floor((Date.now() - at) / 1000));
+  if (s < 3) return '刚刚';
+  if (s < 60) return `${s} 秒前`;
+  return `${Math.floor(s / 60)} 分钟前`;
+}
+
+function exitText(exit) {
+  if (exit.stopped) return { text: `${exit.name} 已停止`, failed: false };
+  if (exit.code === 0) return { text: `${exit.name} 跑完了`, failed: false };
+  const why = exit.code === null ? `被系统结束（${exit.signal}）` : `退出码 ${exit.code}`;
+  return { text: `${exit.name} 中途停了，${why}。原因一般在下面最后几行`, failed: true };
+}
+
+/* ---------- 抬头 ---------- */
+function tagFor(tool) {
+  if (!ui.linked || ui.blocked) return el('span', { className: 'st' });
+  if (!tool.ready) return el('span', { className: 'st', textContent: '没找到' });
+  const s = runOf(tool.id);
+  if (s.run) return el('span', { className: 'st on', textContent: `▶ ${since(s.run.startedAt)}` });
+  if (s.starting) return el('span', { className: 'st', textContent: '启动中…' });
+  if (s.exit && !s.seen && exitText(s.exit).failed) return el('span', { className: 'st pen', textContent: '停了' });
+  return el('span', { className: 'st' });
+}
+
+function renderSubjects() {
+  $('subjects').replaceChildren(...ui.tools.map((tool) => {
+    const picked = ui.picked?.id === tool.id;
+    const name = el('span', { className: `name${picked ? ' hl' : ''}`, textContent: tool.name });
+    const live = Boolean(runOf(tool.id).run);
+    const button = el('button', {
+      type: 'button',
+      className: `subject${tool.ready ? '' : ' missing'}${live ? ' live' : ''}`,
+      title: tool.ready ? '' : `没找到：${tool.dir}`,
+      disabled: ui.blocked,
+      onclick: () => {
+        if (picked) return;
+        ui.picked = tool;
+        ui.invalid.clear();
+        runOf(tool.id).seen = true;
+        $('error').textContent = '';
+        render({ log: true });
+        swipe($('subjects').querySelector('.hl'));
+      },
+    }, name, tagFor(tool));
+    button.setAttribute('aria-pressed', String(picked));
+    return button;
+  }));
+}
+
+function renderLead() {
+  const lead = $('lead');
+  $('lead-margin').textContent = '';
+  if (ui.blocked) {
+    lead.replaceChildren(el('p', { className: 'pen-strong', textContent: '终端版的网课助手正在运行，先在那边退出，再打开这个窗口。' }));
+    return;
+  }
+  if (!ui.linked) {
+    $('lead-margin').append(el('span', { className: 'pen', textContent: '断开了' }));
+    lead.replaceChildren(
+      el('p', { className: 'pen-strong', textContent: '和启动器断开了。' }),
+      el('p', { textContent: '关掉这个窗口重新打开网课助手。' }),
+    );
+    return;
+  }
+  const tool = ui.picked;
+  if (!tool) { lead.replaceChildren(el('p', { textContent: '选一个平台。三个平台可以同时跑，开始一个之后再切到别的平台接着开。' })); return; }
+  if (!tool.ready) {
+    lead.replaceChildren(
+      el('p', { className: 'pen-strong' }, `没找到${tool.name}的程序目录：`),
+      el('p', {}, el('span', { className: 'path', textContent: tool.dir })),
+      el('p', { textContent: '程序放在别处的话，在启动器目录里建一个 tools.local.json 写上实际路径（README 里有例子），再重新打开网课助手。' }),
+    );
+    return;
+  }
+  lead.replaceChildren(el('p', { textContent: tool.hint }));
+}
+
+/* ---------- 开始前：一行摘要 + 静音 + 收起来的其余设置 ---------- */
+const chevron = () => {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 10 10');
+  svg.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS(ns, 'path');
+  p.setAttribute('d', 'M1.5 3.5 5 7l3.5-3.5');
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', 'currentColor');
+  p.setAttribute('stroke-width', '1.6');
+  svg.append(p);
+  return svg;
+};
+
+function field(tool, option) {
+  const key = keyOf(option);
+  const id = `f-${tool.id}-${key}`;
+  const value = initialValue(option);
+  const wrong = ui.invalid.has(option.label);
+  const help = option.help ? el('span', { className: 'help', textContent: option.help }) : null;
+
+  if (option.type === 'bool') {
+    const box = el('input', { type: 'checkbox', id, checked: Boolean(value) });
+    box.dataset.key = key;
+    box.dataset.kind = 'bool';
+    if (option.role === 'mute') {
+      const warn = el('span', { className: 'wrong', textContent: '取消静音后视频会外放声音', hidden: Boolean(value) });
+      box.addEventListener('change', () => { warn.hidden = box.checked; });
+      return el('div', { className: 'row field mute-row' },
+        el('span', { className: 'margin' }),
+        el('div', { className: 'body' }, el('label', { className: 'check', htmlFor: id }, box, el('span', { textContent: option.label })), warn));
+    }
+    return el('div', { className: 'row field' },
+      el('span', { className: 'margin' }),
+      el('div', { className: 'body' }, el('label', { className: 'check', htmlFor: id }, box, el('span', { textContent: option.label })), help));
+  }
+
+  if (option.type === 'select') {
+    const labelId = `${id}-label`;
+    const group = el('div', { className: 'choices', role: 'radiogroup' });
+    group.setAttribute('aria-labelledby', labelId);
+    for (const choice of option.choices) {
+      const radio = el('input', { type: 'radio', name: id, value: choice.value, checked: String(value) === choice.value });
+      radio.dataset.key = key;
+      radio.dataset.kind = 'select';
+      group.append(el('label', { className: 'choice' }, radio, el('span', { textContent: choice.label })));
+    }
+    return el('div', { className: 'row field' },
+      el('span', { className: `margin${wrong ? ' wrong' : ''}`, id: labelId, textContent: option.label }),
+      el('div', { className: 'body' }, group, help));
+  }
+
+  const input = el('input', {
+    id,
+    className: `blank${option.type === 'number' ? ' short' : ''}`,
+    type: option.type === 'number' ? 'text' : option.type === 'password' ? 'password' : 'text',
+    inputMode: option.type === 'number' ? 'numeric' : 'text',
+    value: value === undefined || value === null ? '' : String(value),
+    placeholder: option.placeholder || '',
+    autocomplete: option.type === 'password' ? 'current-password' : 'off',
+    spellcheck: false,
+  });
+  input.dataset.key = key;
+  input.dataset.kind = option.type;
+  input.addEventListener('input', () => {
+    if (!ui.invalid.delete(option.label)) return;
+    input.closest('.field').querySelector('.margin').classList.remove('wrong');
+  });
+  return el('div', { className: 'row field' },
+    el('label', { className: `margin${wrong ? ' wrong' : ''}`, htmlFor: id, textContent: option.label }),
+    el('div', { className: 'body' }, input, help));
+}
+
+function values() {
+  const out = {};
+  for (const input of $('setup').querySelectorAll('[data-key]')) {
+    if (input.dataset.kind === 'bool') out[input.dataset.key] = input.checked;
+    else if (input.dataset.kind === 'select') { if (input.checked) out[input.dataset.key] = input.value; }
+    else out[input.dataset.key] = input.value;
+  }
+  return out;
+}
+
+/* 一份设置写成一行字：开始前（不含静音，静音单独一行）和在跑时（含静音）共用 */
+function summarize(tool, used, { mute = true } = {}) {
+  const parts = [];
+  for (const option of tool.options) {
+    const key = keyOf(option);
+    if (!(key in used) || option.type === 'password') continue;
+    const value = used[key];
+    if (option.type === 'bool') {
+      if (option.role === 'mute') {
+        if (mute) parts.push(value ? el('span', { textContent: '静音' }) : el('span', { className: 'wrong', textContent: '会外放声音' }));
+      } else if (value) parts.push(el('span', { textContent: option.label }));
+      continue;
+    }
+    if (option.type === 'select') {
+      const choice = option.choices.find((c) => c.value === String(value));
+      parts.push(el('span', { textContent: `${option.label} ${choice ? choice.label : value}` }));
+      continue;
+    }
+    const text = String(value ?? '').trim();
+    if (!text) continue;
+    parts.push(el('span', { textContent: `${option.label} ${text.length > 24 ? `${text.slice(0, 24)}…` : text}` }));
+  }
+  const out = [];
+  parts.forEach((part, i) => { if (i) out.push('，'); out.push(part); });
+  return out.length ? out : ['默认设置'];
+}
+
+let formFor = '';
+function renderSetup() {
+  const tool = ui.picked;
+  const state = cur();
+  const show = Boolean(tool && tool.ready && ui.linked && !ui.blocked && !state.run);
+  const key = show ? `${tool.id}:${ui.open[tool.id] ? 'open' : 'shut'}` : '';
+  $('setup').hidden = !show;
+  if (key === formFor) return;
+  formFor = key;
+  if (!show) { $('setup').replaceChildren(); return; }
+
+  const open = Boolean(ui.open[tool.id]);
+  const others = tool.options.filter((o) => o.role !== 'mute');
+  const mute = tool.options.find((o) => o.role === 'mute');
+  const text = el('span', { className: 'setup-text', id: 'setup-text' });
+  const toggle = el('button', {
+    type: 'button',
+    className: 'toggle',
+    onclick: () => { ui.open[tool.id] = !open; keepValues(tool); renderSetup(); $('setup').querySelector('.toggle')?.focus(); },
+  }, open ? '收起' : '改设置', chevron());
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.setAttribute('aria-controls', 'more');
+
+  const more = el('div', { id: 'more', hidden: !open }, ...others.map((o) => field(tool, o)));
+  /* 收起时，没显示的字段也要参与 values()：放隐藏的 input */
+  $('setup').replaceChildren(
+    el('div', { className: 'row setup-head' },
+      el('span', { className: 'margin', textContent: open ? '全部设置' : '设置' }),
+      el('div', { className: 'body' }, open ? null : text, toggle)),
+    more,
+    mute ? field(tool, mute) : null,
+  );
+  if (!open) $('setup-text').replaceChildren(...summarize(tool, values(), { mute: false }));
+}
+
+/* 收起/展开前把手上的值记下来，重画后还是这次填的 */
+function keepValues(tool) {
+  const picked = values();
+  for (const option of tool.options) {
+    const key = keyOf(option);
+    if (key in picked && option.type !== 'password') option.remembered = picked[key];
+  }
+}
+
+function renderActions() {
+  const tool = ui.picked;
+  const state = cur();
+  const usable = Boolean(tool && tool.ready && ui.linked && !ui.blocked);
+  const isRunning = Boolean(state.run);
+  $('actions').hidden = !usable || isRunning;
+  $('start').disabled = state.starting;
+  $('start').textContent = state.starting ? '正在启动…' : `开始：${tool ? tool.name : ''}`;
+
+  $('summary-row').hidden = !(usable && isRunning);
+  if (usable && isRunning) $('summary').replaceChildren(...summarize(tool, state.run.values || {}));
+  $('stop').disabled = state.stopping;
+  $('stop').textContent = state.stopping ? '正在停止…' : `停止：${tool ? tool.name : ''}`;
+  $('stop-help').hidden = !state.stopping;
+}
+
+/* ---------- 运行情况 ---------- */
+const item = (line) => el('li', { className: line.level }, el('time', { textContent: line.time }), el('span', { textContent: line.text }));
+
+function drawLog() {
+  const log = $('log');
+  log.replaceChildren(...cur().lines.map(item));
+  log.scrollTop = log.scrollHeight;
+  $('to-latest').hidden = true;
+}
+function appendLog(lines) {
+  const log = $('log');
+  const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+  for (const line of lines) log.append(item(line));
+  while (log.children.length > MAX_LOG) log.firstElementChild.remove();
+  if (stick) log.scrollTop = log.scrollHeight;
+  else $('to-latest').hidden = false;
+}
+$('log').addEventListener('scroll', () => {
+  const log = $('log');
+  if (log.scrollHeight - log.scrollTop - log.clientHeight < 8) $('to-latest').hidden = true;
+});
+$('to-latest').addEventListener('click', () => {
+  const log = $('log');
+  log.scrollTop = log.scrollHeight;
+  $('to-latest').hidden = true;
+});
+
+const NOTE_RUN = '播放视频的那个浏览器窗口别最小化，也别在里面切到别的标签页；被别的窗口盖住没关系。';
+const NOTE_PREP = '第一次运行要先装依赖，一般一两分钟。下面的记录还在往下走，就是没卡住。';
+
+let lastPhase = '';
+function renderRun() {
+  const state = cur();
+  const isRunning = Boolean(state.run);
+  $('run').hidden = ui.blocked || (!isRunning && !state.exit && !state.lines.length);
+  $('status-row').hidden = !ui.linked;
+  $('note-row').hidden = !isRunning || !ui.linked;
+
+  const status = $('status');
+  const text = $('status-text');
+  let phase;
+  if (isRunning) {
+    text.textContent = state.toolStatus || state.lastLine || '正在启动…';
+    status.className = 'status';
+    $('elapsed').replaceChildren('已运行', el('b', { id: 'elapsed-time', textContent: since(state.run.startedAt) }));
+    $('note').textContent = state.phase === 'prepare' ? NOTE_PREP : NOTE_RUN;
+    $('note').className = `note${state.phase === 'prepare' ? ' prep' : ''}`;
+    phase = `run:${ui.picked.id}:${state.run.startedAt}:${state.phase}:${state.toolStatus.replace(/[（(].*$/, '')}`;
+  } else if (state.exit) {
+    const { text: said, failed } = exitText(state.exit);
+    text.textContent = said;
+    status.className = `status ended${failed ? ' failed' : ''}`;
+    $('elapsed').replaceChildren(failed ? '停在' : '结束于', el('b', { textContent: clock(state.exit.at) }));
+    phase = `exit:${state.exit.at}`;
+  } else {
+    text.textContent = '';
+    $('elapsed').replaceChildren();
+    phase = '';
+  }
+  renderFresh();
+  /* 只在阶段变化时重画荧光（开始、换了一节、切换平台），日志一行一行来时不闪 */
+  if (phase !== lastPhase && isRunning) swipe(text);
+  lastPhase = phase;
+}
+
+function renderFresh() {
+  const state = cur();
+  if (!state.lines.length) { $('fresh').textContent = ''; return; }
+  $('fresh').textContent = state.run && ui.linked
+    ? `最新一行 ${ago(state.lastAt)}`
+    : `共 ${state.lines.length} 行`;
+}
+
+function swipe(node) {
+  if (!node || !node.classList.contains('hl')) return;
+  node.classList.add('dry');
+  requestAnimationFrame(() => requestAnimationFrame(() => node.classList.remove('dry')));
+}
+
+/* ---------- 窗口标题 ---------- */
+function windowTitle() {
+  const live = running();
+  const failed = ui.tools.find((tool) => {
+    const s = runOf(tool.id);
+    return !s.run && s.exit && !s.seen && exitText(s.exit).failed;
+  });
+  if (ui.blocked) return '网课助手';
+  if (!ui.linked) return '✕ 和启动器断开了';
+  if (failed) return `✕ ${failed.name} 停了${live.length ? `（还有 ${live.length} 个在跑）` : ''}`;
+  if (live.length === 1) return `▶ ${live[0].name} ${since(runOf(live[0].id).run.startedAt)}`;
+  if (live.length > 1) return `▶ ${live.map((t) => t.name).join('、')}`;
+  return '网课助手';
+}
+function reflect() {
+  const title = windowTitle();
+  document.title = title;
+  $('win-title').textContent = title;
+}
+
+function render({ log = false } = {}) {
+  renderSubjects();
+  renderLead();
+  renderSetup();
+  renderActions();
+  if (log) drawLog();
+  renderRun();
+  fitLog();
+  reflect();
+}
+
+/* 日志占满窗口剩下的高度（按整行取），窗口拉大就多看几行；剩得太少时至少 4 行，整页滚动 */
+function fitLog() {
+  const log = $('log');
+  if ($('run').hidden) return;
+  const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+  const sheet = getComputedStyle(document.querySelector('.sheet'));
+  const below = parseFloat(sheet.paddingBottom) + parseFloat(getComputedStyle(document.body).paddingBottom) + 1;
+  const room = window.innerHeight - (log.getBoundingClientRect().top + window.scrollY) - below;
+  const line = parseFloat(getComputedStyle(log).lineHeight) || 28;
+  log.style.maxHeight = `${Math.max(line * 4, Math.floor(room / line) * line)}px`;
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+window.addEventListener('resize', fitLog);
+
+setInterval(() => {
+  if (!ui.linked) return;
+  const state = cur();
+  if (state.run && $('elapsed-time')) $('elapsed-time').textContent = since(state.run.startedAt);
+  renderFresh();
+  if (running().length) renderSubjects();
+  reflect();
+}, 1000);
+
+/* ---------- 日志 ---------- */
+function push(id, text, level = '', at = Date.now()) {
+  const state = runOf(id);
+  const line = { time: clock(at), text, level };
+  state.lines.push(line);
+  if (state.lines.length > MAX_LOG) state.lines.splice(0, state.lines.length - MAX_LOG);
+  state.lastLine = text;
+  state.lastAt = at;
+  return line;
+}
+function live(id, text, level = '') {
+  const line = push(id, text, level);
+  if (ui.picked?.id === id) {
+    appendLog([line]);
+    if (!runOf(id).toolStatus && runOf(id).run) $('status-text').textContent = text;
+    renderFresh();
+  }
+}
+
+/* ---------- 开始 / 停止（原型里假装成功） ---------- */
+function start() {
+  const tool = ui.picked;
+  if (!tool) return;
+  const state = runOf(tool.id);
+  if (state.starting || state.run) return;
+  const picked = values();
+  $('error').textContent = '';
+  keepValues(tool);
+
+  const bad = tool.options.filter((o) => o.type === 'number' && String(picked[keyOf(o)] ?? '').trim() && !/^\d+$/.test(String(picked[keyOf(o)]).trim()));
+  if (bad.length) { failStart(tool, bad.map((o) => o.label), `${bad.map((o) => o.label).join('、')} 要填整数`); return; }
+
+  state.starting = true;
+  render();
+  setTimeout(() => {
+    Object.assign(state, blank(), { run: { startedAt: Date.now(), values: picked } });
+    push(tool.id, `启动专用浏览器（独立 profile，${picked.mute === false ? '不静音' : '静音'}）`);
+    push(tool.id, '⏳ 等你打开课程播放页…');
+    state.toolStatus = '⏳ 等你打开课程播放页…（已等 0 秒）';
+    state.sim = waitSim(tool.id);
+    if (ui.picked?.id === tool.id) render({ log: true }); else { renderSubjects(); reflect(); }
+  }, 1100);
+}
+function failStart(tool, labels, message) {
+  ui.invalid = new Set(labels);
+  ui.open[tool.id] = true;
+  formFor = '';
+  render();
+  $('error').textContent = message;
+  $('setup').querySelector('.margin.wrong')?.closest('.field')?.querySelector('input')?.focus();
+}
+$('start').addEventListener('click', start);
+$('setup').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.matches('input.blank')) { e.preventDefault(); start(); }
+});
+$('setup').addEventListener('change', () => {
+  const t = $('setup-text');
+  if (t && ui.picked) t.replaceChildren(...summarize(ui.picked, values(), { mute: false }));
+});
+$('stop').addEventListener('click', () => {
+  const tool = ui.picked;
+  if (!tool) return;
+  const state = runOf(tool.id);
+  state.stopping = true;
+  renderActions();
+  setTimeout(() => {
+    state.run = null;
+    state.sim = null;
+    state.stopping = false;
+    state.exit = { name: tool.name, code: null, stopped: true, at: Date.now() };
+    push(tool.id, '收到停止，浏览器窗口已关闭');
+    state.seen = ui.picked?.id === tool.id;
+    render({ log: true });
+  }, 1600);
+});
+
+/* ---------- 关窗口确认（真实实现里由 WebView2 的 closing 事件触发，也可以用系统原生对话框） ---------- */
+function askClose() {
+  const live = running();
+  if (!live.length) return;
+  $('confirm-title').textContent = `还有 ${live.length} 个平台在跑，关掉窗口会把它们都停掉。`;
+  $('confirm-who').replaceChildren(...live.flatMap((t, i) => [
+    i ? '，' : '',
+    el('b', { textContent: t.name }),
+    ` 已运行 ${since(runOf(t.id).run.startedAt)}`,
+  ]));
+  if (!$('confirm').open) $('confirm').showModal();
+  $('confirm-cancel').focus();
+}
+$('confirm-cancel').addEventListener('click', () => $('confirm').close());
+$('confirm-ok').addEventListener('click', () => $('confirm').close());
+
+/* ====================================================================
+   以下是原型专用：假数据和状态切换器。接后端时整段删掉。
+   ==================================================================== */
+const S = 1000;
+function fill(id, startedAgo, entries, extra = {}) {
+  const state = runOf(id);
+  const now = Date.now();
+  for (const [secAgo, text, level] of entries) push(id, text, level || '', now - secAgo * S);
+  if (startedAgo !== null) {
+    const tool = toolById(id);
+    const vals = {};
+    for (const o of tool.options) if (o.type !== 'password') vals[keyOf(o)] = initialValue(o);
+    state.run = { startedAt: now - startedAgo * S, values: vals };
+  }
+  Object.assign(state, extra);
+  return state;
+}
+
+const XXT = [
+  [754, '启动专用 Chrome（独立 profile：C:\\Users\\me\\AppData\\Local\\网课助手\\xuexitong-chrome，静音）'],
+  [754, '连接 Chrome: http://127.0.0.1:9222'],
+  [753, '⏳ 等你打开课程播放页…'],
+  [701, '课程共 6 章 42 节，当前：1.1 映射与函数'],
+  [701, '开始了。可以把浏览器窗口放到后面去，但别最小化。'],
+  [700, '正在播放：1.1 映射与函数（0%，2x）'],
+  [560, '正在播放：1.1 映射与函数（51%，2x）'],
+  [431, '1.1 映射与函数 播完了'],
+  [430, '1.2 习题课 只剩测验，跳过', 'warn'],
+  [428, '正在播放：1.3 函数的极限（0%，2x）'],
+  [300, '正在播放：1.3 函数的极限（14%，2x）'],
+  [180, '正在播放：1.3 函数的极限（28%，2x）'],
+  [60, '正在播放：1.3 函数的极限（38%，2x）'],
+  [2, '正在播放：1.3 函数的极限（42%，2x）'],
+];
+const YKT = [
+  [490, '启动专用 Chrome（独立 profile：C:\\Users\\me\\AppData\\Local\\网课助手\\yuketang-chrome，静音）'],
+  [490, '连接 Chrome: http://127.0.0.1:9223'],
+  [470, '已经播完的不重放，从「2.1 数据结构概述」开始', 'warn'],
+  [469, '视频 2.1 数据结构概述：已看 5%'],
+  [300, '视频 2.1 数据结构概述：已看 40%'],
+  [120, '视频 2.1 数据结构概述：已看 60%'],
+  [4, '视频 2.1 数据结构概述：已看 65%'],
+];
+const ZHS = [
+  [182, '程序启动中...'],
+  [181, '正在启动 edge 浏览器...'],
+  [180, '请在浏览器里点开要学的课程, 进到能看到视频的播放页, 打开后会自动开始.'],
+  [140, '已进入播放页：大学生心理健康教育'],
+  [139, '正在学习：3.2 情绪管理（进度 12%，1.5x）'],
+  [3, '正在学习：3.2 情绪管理（进度 18%，1.5x）'],
+];
+const ZHS_FAIL = [
+  [5, '程序启动中...'],
+  [5, '正在启动 edge 浏览器...'],
+  [4, '请在浏览器里点开要学的课程, 进到能看到视频的播放页, 打开后会自动开始.'],
+  [3, '课程目录加载超时, 正在重试...', 'warn'],
+  [3, '课程目录加载超时, 未识别到新版/旧版/翻转课目录', 'warn'],
+  [2, '找不到视频播放器，可能是还没进到播放页，或者页面改版了', 'error'],
+  [2, '程序退出', 'error'],
+];
+
+function simPlay(id, make) {
+  let pct = 0;
+  return () => { pct += 1; const t = make(pct); if (!t) return; runOf(id).toolStatus = t; live(id, t); renderRun(); };
+}
+function waitSim(id) {
+  const t0 = Date.now();
+  return () => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    runOf(id).toolStatus = `⏳ 等你打开课程播放页…（已等 ${s} 秒）`;
+    if (ui.picked?.id === id) renderRun();
+  };
+}
+
+const SCENES = {
+  idle: ['空闲', () => { ui.picked = toolById('xuexitong'); }],
+  three: ['三个平台同时在跑', () => {
+    fill('xuexitong', 754, XXT, { toolStatus: '正在播放：1.3 函数的极限（42%，2x）', sim: simPlay('xuexitong', (p) => p < 58 ? `正在播放：1.3 函数的极限（${42 + p}%，2x）` : null) });
+    fill('yuketang', 490, YKT, { toolStatus: '视频 2.1 数据结构概述：已看 65%', sim: simPlay('yuketang', (p) => p < 35 ? `视频 2.1 数据结构概述：已看 ${65 + p}%` : null) });
+    fill('zhihuishu', 182, ZHS, { toolStatus: '正在学习：3.2 情绪管理（18%，1.5x）' });
+    ui.picked = toolById('xuexitong');
+  }],
+  starting: ['正在启动', () => {
+    runOf('xuexitong').starting = true;
+    ui.picked = toolById('xuexitong');
+  }],
+  prepare: ['第一次装依赖', () => {
+    fill('xuexitong', 48, [
+      [48, '第一次运行，先装依赖：npm install（只装这一次）'],
+      [47, 'npm http fetch GET 200 https://registry.npmmirror.com/playwright-core 1203ms'],
+      [31, 'npm http fetch GET 200 https://registry.npmmirror.com/playwright-core/-/playwright-core.tgz 15890ms'],
+      [12, 'npm info run 解压中…'],
+      [1, 'npm timing reify:unpack Completed in 10862ms'],
+    ], { phase: 'prepare', toolStatus: '第一次运行，正在安装依赖…（已等 48 秒）' });
+    const t0 = Date.now() - 48 * S;
+    runOf('xuexitong').sim = () => {
+      runOf('xuexitong').toolStatus = `第一次运行，正在安装依赖…（已等 ${Math.floor((Date.now() - t0) / 1000)} 秒）`;
+      if (ui.picked?.id === 'xuexitong') renderRun();
+    };
+    ui.picked = toolById('xuexitong');
+  }],
+  done: ['正常结束', () => {
+    fill('yuketang', null, [...YKT.map(([s, t, l]) => [s + 1800, t, l]),
+      [600, '视频 2.4 线性表的链式存储：已看 100%'],
+      [599, '全部学完了：数据结构（36 项，跳过 4 项图文）'],
+    ], { exit: { name: '长江雨课堂', code: 0, stopped: false, at: Date.now() - 599 * S } });
+    ui.picked = toolById('yuketang');
+  }],
+  failed: ['出错结束', () => {
+    fill('zhihuishu', null, ZHS_FAIL, { exit: { name: '智慧树', code: 1, stopped: false, at: Date.now() - 2 * S } });
+    ui.picked = toolById('zhihuishu');
+  }],
+  failedOther: ['别的平台出错', () => {
+    fill('xuexitong', 754, XXT, { toolStatus: '正在播放：1.3 函数的极限（42%，2x）' });
+    fill('zhihuishu', null, ZHS_FAIL, { exit: { name: '智慧树', code: 1, stopped: false, at: Date.now() - 2 * S }, seen: false });
+    ui.picked = toolById('xuexitong');
+  }],
+  startError: ['启动失败', () => {
+    const tool = toolById('xuexitong');
+    tool.options[0].remembered = '3.5';
+    ui.picked = tool;
+    setTimeout(() => failStart(tool, ['最多播几节'], '最多播几节 要填整数'), 0);
+  }],
+  unmuted: ['取消静音的警告', () => {
+    toolById('xuexitong').options.find((o) => o.role === 'mute').remembered = false;
+    ui.picked = toolById('xuexitong');
+  }],
+  missing: ['程序目录不在', () => {
+    toolById('zhihuishu').ready = false;
+    fill('xuexitong', 754, XXT, { toolStatus: '正在播放：1.3 函数的极限（42%，2x）' });
+    ui.picked = toolById('zhihuishu');
+  }],
+  offline: ['和后端断开', () => {
+    fill('xuexitong', 754, XXT, { toolStatus: '正在播放：1.3 函数的极限（42%，2x）' });
+    fill('yuketang', 490, YKT, { toolStatus: '视频 2.1 数据结构概述：已看 65%' });
+    ui.linked = false;
+    ui.picked = toolById('xuexitong');
+  }],
+  blocked: ['终端版正在运行', () => { ui.blocked = true; ui.picked = null; }],
+  closing: ['关窗口确认', () => {
+    fill('xuexitong', 754, XXT, { toolStatus: '正在播放：1.3 函数的极限（42%，2x）' });
+    fill('zhihuishu', 182, ZHS, { toolStatus: '正在学习：3.2 情绪管理（18%，1.5x）' });
+    ui.picked = toolById('xuexitong');
+    setTimeout(askClose, 0);
+  }],
+};
+
+let scene = '';
+function load(name) {
+  if (!SCENES[name]) name = 'idle';
+  scene = name;
+  if ($('confirm').open) $('confirm').close();
+  Object.assign(ui, { tools: registry(), picked: null, runs: {}, linked: true, blocked: false, invalid: new Set(), open: {} });
+  formFor = '';
+  lastPhase = '';
+  $('error').textContent = '';
+  SCENES[name][1]();
+  render({ log: true });
+  for (const b of $('scene-btns').children) b.setAttribute('aria-pressed', String(b.dataset.scene === name));
+  const url = new URL(location.href);
+  url.searchParams.set('state', name);
+  history.replaceState(null, '', url);
+}
+
+function setTheme(mode) {
+  if (mode === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.dataset.theme = mode;
+  for (const b of $('theme-btns').children) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+}
+
+$('scene-btns').append(...Object.entries(SCENES).map(([key, [label]]) => {
+  const b = el('button', { type: 'button', textContent: label, onclick: () => load(key) });
+  b.dataset.scene = key;
+  return b;
+}));
+$('theme-btns').append(...[['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']].map(([mode, label]) => {
+  const b = el('button', { type: 'button', textContent: label, onclick: () => setTheme(mode) });
+  b.dataset.mode = mode;
+  return b;
+}));
+
+if (BARE) $('proto').hidden = true;
+else setInterval(() => { for (const t of ui.tools) runOf(t.id).sim?.(); }, 2000);
+setTheme(params.get('theme') || 'auto');
+load(params.get('state') || 'idle');
+</script>
+</body>
+</html>

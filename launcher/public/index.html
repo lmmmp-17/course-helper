@@ -4,65 +4,100 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>网课助手</title>
-<link rel="icon" id="favicon" href="data:,">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='1' y='1' width='30' height='30' rx='7' fill='%231E2B4A'/%3E%3Cpath d='M5.2 10.6Q5 9.4 6.3 9.2L25.6 8Q27 7.9 27.1 9.3L27.6 21.2Q27.7 22.6 26.3 22.7L6.9 23.9Q5.6 24 5.5 22.7Z' fill='%23F2E35B'/%3E%3Cpath d='M13 11.4L13 20.6L21.2 16Z' fill='%231E2B4A' stroke='%231E2B4A' stroke-width='1.6' stroke-linejoin='round'/%3E%3C/svg%3E">
 <!--
-  界面是一张作业本内页：横格就是基线网格（所有文字落在 28px 的格线上），
-  左边页边放「元信息」——字段名、日志时间、已运行时长。
-  颜色都从学生桌上来：蓝黑墨水、横格的浅蓝、荧光笔、红笔。
-  荧光笔只标「现在正在发生的事」（选中的平台、当前状态），红笔只标错误。
-  后端接口见 README「控制台接口」，换掉这个文件不用动后端。
+  网课助手 · 控制台（作业本 第二版，设计稿在 design/new/wangke-design/）
+
+  一张作业本内页：横格是基线网格（文字都落在 28px 的格线上），左边页边放元信息：字段名、时间、已运行时长。
+  三支笔，各管一件事：
+    蓝黑墨水  正文
+    荧光笔    现在正在发生的事（选中的平台、当前状态）
+    红笔      错误，和老师改作业一样画波浪线
+  另加一支褐色铅笔，只用来标日志里的「注意」，和红笔的「出错」分开。
+
+  浏览器版（node launcher/run.mjs --web）和窗口版（网课助手.exe，地址带 shell=gui）共用这个页面。
+  后端接口见 launcher/README.md「接口」，换掉这个文件不用动后端。
 -->
 <style>
   :root {
-    --paper: #E9EDF1;
-    --page: #FAFBFC;
-    --ink: #1E2B4A;
-    --ink-soft: #55637D;
-    --ink-faint: #97A3B6;
-    --rule: #D8E1EA;
-    --rule-strong: #B4C4D6;
-    --hl: #F2E35B;
-    --pen: #C2362F;
+    --paper: #E9EDF1;      /* 窗口底色（桌面） */
+    --page: #FAFBFC;       /* 作业纸 */
+    --ink: #1E2B4A;        /* 蓝黑墨水：正文、主按钮 */
+    --ink-soft: #55637D;   /* 次要文字：说明、页边字段名 */
+    --ink-mute: #626F86;   /* 更次要：日志时间、占位符（仍过 4.5:1） */
+    --rule: #D8E1EA;       /* 横格线 */
+    --rule-strong: #B4C4D6;/* 页边竖线、纸张边框、输入下划线 */
+    --hl: #F2E35B;         /* 荧光笔 */
+    --pen: #C2362F;        /* 红笔：错误 */
+    --on-pen: #FFFFFF;     /* 红底上的字 */
+    --pencil: #8F5208;     /* 褐色铅笔：日志里的「注意」 */
+    --scrim: rgba(30, 43, 74, .38);
+    --shadow: 0 14px 40px rgba(30, 43, 74, .22);
 
-    --sans: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", "Microsoft YaHei",
+    --sans: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "HarmonyOS Sans SC", "MiSans",
             "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+    --mono: "Cascadia Mono", Consolas, "Noto Sans Mono CJK SC", ui-monospace, monospace;
     --line: 28px;
     --pad: 48px;
-    --margin: 9.5em;
+    --margin: 9em;
     --gap: 28px;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --paper: #11161F;
+    :root:not([data-theme="light"]) {
+      --paper: #10151E;
       --page: #171E2A;
       --ink: #DDE4EE;
-      --ink-soft: #9CAABD;
-      --ink-faint: #5F6C80;
-      --rule: #222C3D;
-      --rule-strong: #33415A;
-      --hl: rgba(232, 214, 72, .34);
-      --pen: #F0786B;
+      --ink-soft: #A0AEC1;
+      --ink-mute: #8391A6;
+      --rule: #232D3E;
+      --rule-strong: #36445C;
+      --hl: rgba(232, 214, 72, .36);
+      --pen: #F27D70;
+      --on-pen: #1A0F0E;
+      --pencil: #E3A857;
+      --scrim: rgba(5, 8, 14, .6);
+      --shadow: 0 14px 40px rgba(0, 0, 0, .5);
       color-scheme: dark;
     }
+  }
+  :root[data-theme="dark"] {
+    --paper: #10151E;
+    --page: #171E2A;
+    --ink: #DDE4EE;
+    --ink-soft: #A0AEC1;
+    --ink-mute: #8391A6;
+    --rule: #232D3E;
+    --rule-strong: #36445C;
+    --hl: rgba(232, 214, 72, .36);
+    --pen: #F27D70;
+    --on-pen: #1A0F0E;
+    --pencil: #E3A857;
+    --scrim: rgba(5, 8, 14, .6);
+    --shadow: 0 14px 40px rgba(0, 0, 0, .5);
+    color-scheme: dark;
   }
 
   * { box-sizing: border-box; }
   html { background: var(--paper); }
   body {
     margin: 0;
-    padding: var(--line) 20px calc(var(--line) * 2);
+    min-height: 100vh;
+    padding: var(--line) 20px var(--line);
+    background: var(--paper);
     font: 15px/var(--line) var(--sans);
     color: var(--ink);
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
   }
+  [hidden] { display: none !important; }
 
   /* ---------- 内页：横格 + 页边线 ---------- */
   .sheet {
     max-width: 1000px;
+    min-height: calc(100vh - var(--line) * 2);
     margin: 0 auto;
-    padding: var(--line) var(--pad) calc(var(--line) * 2);
+    padding: var(--line) var(--pad) var(--line);
     background-color: var(--page);
     background-image:
       linear-gradient(var(--rule-strong), var(--rule-strong)),
@@ -75,61 +110,49 @@
     border: 1px solid var(--rule-strong);
     border-radius: 2px;
   }
-
   .row {
     display: grid;
     grid-template-columns: var(--margin) minmax(0, 1fr);
     column-gap: var(--gap);
     margin: 0;
   }
-  .margin {
-    text-align: right;
-    color: var(--ink-soft);
-    overflow-wrap: anywhere;
-  }
-  [hidden] { display: none !important; }
+  .margin { text-align: right; color: var(--ink-soft); overflow-wrap: anywhere; }
+  p { margin: 0; }
 
-  /* ---------- 抬头：书名 + 三个平台 ---------- */
-  .masthead { min-height: calc(var(--line) * 2); align-items: center; }
-  .masthead h1 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 700;
-    line-height: calc(var(--line) * 2);
-    color: var(--ink);
-  }
-  .subjects { display: flex; flex-wrap: wrap; gap: 0 .9em; align-items: center; }
+  /* ---------- 抬头：书名 + 三个平台（像目录） ---------- */
+  .masthead { min-height: calc(var(--line) * 2); }
+  .masthead h1 { margin: 0; font-size: 15px; font-weight: 700; line-height: var(--line); color: var(--ink); }
+  .subjects { display: flex; flex-wrap: wrap; gap: 0 2em; }
   .subject {
-    font: 600 24px/calc(var(--line) * 2) var(--sans);
+    display: block;
+    height: calc(var(--line) * 2);
+    font: inherit;
     color: var(--ink-soft);
     background: none;
     border: 0;
-    padding: 0 .25em;
-    margin: 0 -.25em;
+    border-radius: 3px;
+    padding: 0 .3em;
+    margin: 0 -.3em;
+    text-align: left;
     cursor: pointer;
   }
-  .subject:hover:not(:disabled) { color: var(--ink); }
-  .subject[aria-pressed="true"] { color: var(--ink); }
-  .subject.missing { text-decoration: line-through 1.5px var(--ink-faint); }
-  /* 平台名旁边的小字：在跑的写已运行时长，中途停了的用红笔标一下 */
-  .subject .tag {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ink-soft);
-    margin-left: .3em;
-    vertical-align: .6em;
-    line-height: 1;
-  }
-  .subject .tag.pen { color: var(--pen); }
+  .subject .name { font-size: 22px; font-weight: 600; line-height: var(--line); white-space: nowrap; }
+  .subject .st { display: block; min-height: var(--line); font-size: 13px; font-weight: 600; line-height: var(--line); white-space: nowrap; color: var(--ink-soft); }
+  .subject .name { display: block; }
+  .subject .st.on { color: var(--ink); }
+  .subject .st.pen { color: var(--pen); text-decoration: underline wavy var(--pen) 1px; text-underline-offset: 4px; }
+  .subject:hover:not(:disabled), .subject.live, .subject[aria-pressed="true"] { color: var(--ink); }
+  .subject.missing .name { color: var(--ink-mute); text-decoration: line-through 1.5px var(--ink-mute); }
+  .subject:disabled { cursor: default; color: var(--ink-mute); }
 
-  /* 荧光笔：只标正在发生的事。画上去的那一下是唯一一处不由点击触发的动画 */
+  /* 荧光笔：只标正在发生的事。画上去的那一下只在状态变化时出现 */
   .hl {
     color: inherit;
     background-image: linear-gradient(100deg,
       transparent .12em, var(--hl) .3em, var(--hl) calc(100% - .35em), transparent calc(100% - .1em));
     background-repeat: no-repeat;
     background-position: 0 58%;
-    background-size: 100% 70%;
+    background-size: 100% 72%;
     -webkit-box-decoration-break: clone;
     box-decoration-break: clone;
     padding: 0 .3em;
@@ -137,14 +160,32 @@
     border-radius: .35em .6em .4em .7em / .5em .4em .6em .5em;
     transition: background-size .5s cubic-bezier(.3, .7, .2, 1);
   }
-  .hl.dry { background-size: 0% 70%; }
+  .hl.dry { background-size: 0% 72%; }
 
   .lead { color: var(--ink-soft); }
-  .lead p { margin: 0; }
-  .lead .path { color: var(--ink); overflow-wrap: anywhere; }
+  .lead .path { color: var(--ink); font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+  .lead .pen-strong { color: var(--pen); font-weight: 600; }
 
-  /* ---------- 表单：格线上的填空 ---------- */
-  .fields { margin: var(--line) 0 0; }
+  /* ---------- 开始前：一行默认设置 + 静音，其余收起 ---------- */
+  .setup { margin-top: var(--line); }
+  .setup-head > .body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1.2em; }
+  .setup-text { color: var(--ink); }
+  .toggle {
+    font: inherit;
+    font-size: 14px;
+    color: var(--ink-soft);
+    background: none;
+    border: 0;
+    padding: 0 .2em;
+    margin: 0 -.2em;
+    cursor: pointer;
+    text-decoration: underline 1px var(--rule-strong);
+    text-underline-offset: 5px;
+  }
+  .toggle:hover { color: var(--ink); text-decoration-color: var(--ink); }
+  .toggle svg { width: 10px; height: 10px; margin-left: .25em; vertical-align: 0; transition: transform .2s; }
+  .toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+
   .field { min-height: var(--line); }
   .field > .body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 1em; }
   .blank {
@@ -152,33 +193,34 @@
     color: var(--ink);
     background: transparent;
     border: 0;
-    border-bottom: 1px solid var(--ink-faint);
+    border-bottom: 1px solid var(--ink-mute);
     border-radius: 0;
     height: var(--line);
     padding: 0 2px;
-    width: 26em;
+    width: 22em;
     max-width: 100%;
   }
   .blank.short { width: 6em; }
-  .blank.wide { width: 100%; }
-  .blank::placeholder { color: var(--ink-faint); }
+  .blank::placeholder { color: var(--ink-mute); }
   .blank:focus { outline: none; border-bottom: 2px solid var(--ink); }
   .choices { display: flex; flex-wrap: wrap; gap: 0 1.4em; }
   .choice, .check { display: inline-flex; align-items: center; gap: .4em; cursor: pointer; }
   input[type="radio"], input[type="checkbox"] { accent-color: var(--ink); width: 15px; height: 15px; margin: 0; }
   .help { font-size: 13px; color: var(--ink-soft); }
+  .mute-row .check { font-weight: 600; }
 
-  /* 红笔：错误、漏填，和老师改作业一样画波浪线 */
+  /* 红笔：错误、漏填、会外放声音 */
   .pen { color: var(--pen); }
   .wrong {
     color: var(--pen);
+    font-weight: 600;
     text-decoration: underline wavy var(--pen) 1px;
     text-underline-offset: 5px;
   }
 
   /* ---------- 按钮 ---------- */
   .actions { padding: 8px 0; margin-top: var(--line); }
-  .actions > .body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .actions > .body, .summary > .body { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
   .button {
     font: 600 15px/1 var(--sans);
     height: 40px;
@@ -186,21 +228,39 @@
     border-radius: 3px;
     cursor: pointer;
     border: 1px solid var(--ink);
+    white-space: nowrap;
   }
   .button.go { background: var(--ink); color: var(--page); }
   .button.go:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 86%, var(--page)); }
-  .button.halt { background: transparent; color: var(--ink); }
-  .button.halt:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, transparent); }
-  .button:disabled { opacity: .5; cursor: default; }
+  .button.halt { background: var(--page); color: var(--ink); }
+  .button.halt:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, var(--page)); }
+  .button.danger { background: var(--pen); border-color: var(--pen); color: var(--on-pen); }
+  .button:disabled { opacity: .55; cursor: default; }
+  .mini {
+    font: 600 13px/1 var(--sans);
+    height: 24px;
+    padding: 0 .8em;
+    color: var(--ink);
+    background: var(--page);
+    border: 1px solid var(--rule-strong);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .mini:hover { border-color: var(--ink); }
 
   :focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
   .blank:focus-visible { outline: none; }
 
-  /* ---------- 运行中 ---------- */
-  .summary > .body { color: var(--ink-soft); }
+  /* ---------- 在跑：设置摘要 + 停止 ---------- */
+  .summary { padding: 8px 0; margin-top: var(--line); }
+  .summary .margin, .summary .body { line-height: 40px; }
+  .summary-text { flex: 1 1 auto; min-width: 0; color: var(--ink-soft); line-height: var(--line); }
+
+  /* ---------- 运行情况 ---------- */
   .run { margin-top: var(--line); }
   .status-row { min-height: calc(var(--line) * 2); align-items: center; }
-  .elapsed { line-height: calc(var(--line) * 2); }
+  .elapsed { line-height: var(--line); }
+  .elapsed b { display: block; font-size: 15px; font-weight: 600; color: var(--ink); }
   .status {
     margin: 0;
     font-size: 22px;
@@ -210,39 +270,64 @@
   }
   .status.ended .hl { background-image: none; }
   .status.failed { color: var(--pen); }
+  .status.failed .hl { text-decoration: underline wavy var(--pen) 1.5px; text-underline-offset: 9px; }
   .note { color: var(--ink-soft); }
+  .note.prep { color: var(--ink); }
 
+  .logbar { margin-top: var(--line); }
+  .logbar > .margin { color: var(--ink-soft); }
+  .logbar > .body { display: flex; align-items: center; gap: 1em; font-size: 13px; color: var(--ink-soft); }
   .log {
     list-style: none;
-    margin: var(--line) 0 0;
+    margin: 0;
     padding: 0;
-    max-height: calc(var(--line) * 15);
+    max-height: max(calc(var(--line) * 4), calc(100vh - 456px));
     overflow-y: auto;
     overscroll-behavior: contain;
-    /* 日志自己滚动，横格得跟着字一起走 */
     background-image: repeating-linear-gradient(to bottom,
       transparent 0 calc(var(--line) - 1px), var(--rule) calc(var(--line) - 1px) var(--line));
     background-attachment: local;
   }
   .log li { display: grid; grid-template-columns: var(--margin) minmax(0, 1fr); column-gap: var(--gap); }
-  .log time { text-align: right; font-size: 13px; color: var(--ink-faint); }
+  .log time { text-align: right; font-size: 13px; color: var(--ink-mute); }
   .log span { overflow-wrap: anywhere; white-space: pre-wrap; }
-  .log .warn span, .log .warn time { color: var(--pen); }
-  .log .error span { color: var(--pen); font-weight: 600; }
+  .log .warn time, .log .warn span { color: var(--pencil); }
+  .log .warn span::before { content: "! "; font-weight: 700; }
   .log .error time { color: var(--pen); }
+  .log .error span { color: var(--pen); font-weight: 600; }
+  .log .error span::before { content: "✕ "; }
 
-  @media (max-width: 720px) {
-    :root { --pad: 18px; --gap: 0px; }
-    body { padding: 0; }
-    .sheet { border: 0; border-radius: 0; background-size: 0 0, 100% 100%; }
-    .row, .log li { grid-template-columns: minmax(0, 1fr); }
-    .margin, .log time { text-align: left; font-size: 13px; }
-    .masthead h1 { line-height: var(--line); }
-    .subject { font-size: 20px; }
-    .blank { width: 100%; }
+  /* ---------- 关窗口确认 ---------- */
+  dialog {
+    width: min(30em, calc(100vw - 48px));
+    padding: var(--line) 32px calc(var(--line) - 8px);
+    color: var(--ink);
+    background: var(--page);
+    border: 1px solid var(--rule-strong);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+  }
+  dialog::backdrop { background: var(--scrim); }
+  dialog h2 { margin: 0; font-size: 17px; font-weight: 600; line-height: var(--line); }
+  dialog .who { color: var(--ink-soft); margin-top: 4px; }
+  dialog .who b { color: var(--ink); font-weight: 600; }
+  dialog .dlg-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: var(--line); }
+
+  /* ---------- 窄窗口（最小 720×560） ---------- */
+  @media (max-width: 860px) {
+    :root { --pad: 28px; --margin: 6.5em; --gap: 20px; }
+    body { padding-left: 12px; padding-right: 12px; }
+    .subjects { gap: 0 1.4em; }
+    .subject .name { font-size: 20px; }
+    .blank { width: 18em; }
+  }
+  @media (max-height: 640px) {
+    body { padding-top: 12px; padding-bottom: 12px; }
+    .sheet { min-height: calc(100vh - 24px); padding-top: 0; }
+    .log { max-height: max(calc(var(--line) * 4), calc(100vh - 400px)); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .hl { transition: none; }
+    .hl, .toggle svg { transition: none; }
   }
 </style>
 </head>
@@ -253,111 +338,174 @@
     <nav class="subjects" id="subjects" aria-label="平台"></nav>
   </header>
 
-  <div class="row lead" id="lead-row">
-    <span class="margin"></span>
-    <div id="lead"></div>
+  <div class="row lead">
+    <span class="margin" id="lead-margin"></span>
+    <div id="lead" aria-live="polite"></div>
   </div>
 
-  <form id="form" class="fields" novalidate></form>
-
-  <div class="row summary" id="summary-row" hidden>
-    <span class="margin">这次的设置</span>
-    <div class="body" id="summary"></div>
-  </div>
+  <section class="setup" id="setup" aria-label="设置"></section>
 
   <div class="row actions" id="actions">
     <span class="margin"></span>
     <div class="body">
       <button class="button go" id="start" type="button">开始</button>
-      <button class="button halt" id="stop" type="button" hidden>停止</button>
       <span class="wrong" id="error" role="alert"></span>
     </div>
   </div>
 
+  <div class="row summary" id="summary-row" hidden>
+    <span class="margin">这次的设置</span>
+    <div class="body">
+      <span class="summary-text" id="summary"></span>
+      <button class="button halt" id="stop" type="button">停止</button>
+      <span class="help" id="stop-help" hidden>一般几秒，最多 8 秒</span>
+    </div>
+  </div>
+
   <section class="run" id="run" hidden aria-label="运行情况">
-    <div class="row status-row">
+    <div class="row status-row" id="status-row">
       <span class="margin elapsed" id="elapsed"></span>
       <p class="status" id="status" aria-live="polite"><span class="hl" id="status-text"></span></p>
     </div>
     <div class="row" id="note-row">
       <span class="margin"></span>
-      <p class="note" id="note" style="margin:0">播放视频的那个浏览器窗口别最小化，也别在里面切到别的标签页；被别的窗口盖住没关系。</p>
+      <p class="note" id="note"></p>
+    </div>
+    <div class="row logbar">
+      <span class="margin">记录</span>
+      <div class="body">
+        <span id="fresh"></span>
+        <button class="mini" id="to-latest" type="button" hidden>回到最新</button>
+      </div>
     </div>
     <ol class="log" id="log" role="log" aria-label="运行记录"></ol>
   </section>
 </main>
 
+<dialog id="confirm" aria-labelledby="confirm-title">
+  <h2 id="confirm-title"></h2>
+  <p class="who" id="confirm-who"></p>
+  <div class="dlg-actions">
+    <button class="button halt" id="confirm-cancel" type="button" autofocus>取消</button>
+    <button class="button danger" id="confirm-ok" type="button">全部停止并关闭</button>
+  </div>
+</dialog>
+
 <script type="module">
-const token = new URL(location.href).searchParams.get('token') || '';
-/* 装在 Windows 窗口版里（网课助手.exe）时地址里带 shell=gui：有些提示要换个说法 */
-const inWindow = new URL(location.href).searchParams.get('shell') === 'gui';
+/* ------------------------------------------------------------------
+ * 接后端：/api/tools、/api/events（SSE）、/api/start、/api/stop、/api/pick。
+ * 窗口版（网课助手.exe）里地址带 shell=gui，外壳注入了 courseHelperClose 等函数。
+ * 日志和结束原因的说法和终端版共用一套（launcher/src/present.mjs），改的时候两边一起改。
+ * ------------------------------------------------------------------ */
+const params = new URL(location.href).searchParams;
+const token = params.get('token') || '';
+const inWindow = params.get('shell') === 'gui';
 const query = `token=${encodeURIComponent(token)}`;
 const api = (path, init) => fetch(`/api/${path}?${query}`, init);
+const post = (path, body) => api(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const $ = (id) => document.getElementById(id);
 const el = (tag, props = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), props);
-  node.append(...children.filter((child) => child !== null && child !== undefined && child !== false));
+  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
   return node;
 };
+const MAX_LOG = 1000;
 
 /* ---------- 状态 ---------- */
 /* 三个平台可以同时跑。每个平台各有一份：正在跑的、上次怎么停的、日志。
  * 页面上一次只展示选中的那个平台，切换平台不影响别的在跑。 */
-const MAX_LOG = 1000;
-const ui = {
-  tools: [],
-  picked: null,
-  runs: {},
-  linked: true,
-  invalid: new Set(),
-};
-
+const ui = { tools: [], picked: null, runs: {}, linked: true, invalid: new Set(), open: {} };
 const blank = () => ({
   run: null,          /* 正在跑：{ startedAt, values } */
-  exit: null,         /* 上一次怎么停的 */
+  exit: null,         /* 上一次怎么停的：{ name, code, signal, stopped, at } */
   toolStatus: '',     /* 工具自己报的 [[status]] */
+  phase: '',          /* 'prepare' = 第一次装依赖（按日志认出来的） */
   lastLine: '',       /* 没有 [[status]] 时，拿最后一行日志当状态 */
+  lastAt: 0,
   lines: [],
   starting: false,
   stopping: false,
-  seen: true,         /* 中途停了、而你还没切过去看的，平台名旁边一直标着 */
+  seen: true,         /* 中途停了、还没切过去看的，平台名下面一直标着「停了」 */
 });
 const runOf = (id) => (ui.runs[id] ??= blank());
 const cur = () => (ui.picked ? runOf(ui.picked.id) : blank());
-const running = () => ui.tools.filter((tool) => runOf(tool.id).run);
+const running = () => ui.tools.filter((t) => runOf(t.id).run);
+const toolById = (id) => ui.tools.find((t) => t.id === id) || null;
+const keyOf = (o) => o.flag || o.key.join('.');
+const domId = (key) => key.replace(/[^\w-]/g, '_');
 
-/* 上次选的平台、填过的值存在后端（settings.json），窗口版和终端版共用，这里不再用 localStorage */
-const rememberPick = (id) => {
-  api('pick', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tool: id }) }).catch(() => {});
-};
-
-const keyOf = (option) => option.flag || option.key.join('.');
-const toolById = (id) => ui.tools.find((tool) => tool.id === id) || null;
-
-/* 预填的优先级：工具自己的配置文件 > 上次填的（两个入口共用）> 登记表默认值 */
-function initialValue(tool, option) {
+/* 预填的优先级：工具自己的配置文件 > 上次填的（窗口版和终端版共用）> 登记表默认值 */
+function initialValue(option) {
   if (option.current !== undefined) return option.current;
   if (option.remembered !== undefined && option.type !== 'password') return option.remembered;
   if (option.default !== undefined) return option.default;
   return option.type === 'bool' ? false : '';
 }
 
+/* 上次选的平台存在后端（settings.json），两个入口共用 */
+const rememberPick = (id) => { post('pick', { tool: id }).catch(() => {}); };
+
+/* ---------- 时间和说法 ---------- */
+const clock = (at) => new Date(at).toTimeString().slice(0, 8);
+function since(start) {
+  const s = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  const h = Math.floor(s / 3600);
+  const m = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
+  return `${h ? `${h}:` : ''}${m}:${String(s % 60).padStart(2, '0')}`;
+}
+function ago(at) {
+  const s = Math.max(0, Math.floor((Date.now() - at) / 1000));
+  if (s < 3) return '刚刚';
+  if (s < 60) return `${s} 秒前`;
+  return `${Math.floor(s / 60)} 分钟前`;
+}
+function exitText(exit) {
+  if (exit.stopped) return { text: `${exit.name} 已停止`, failed: false };
+  if (exit.code === 0) return { text: `${exit.name} 跑完了`, failed: false };
+  const why = exit.code === null ? `被系统结束（${exit.signal}）` : `退出码 ${exit.code}`;
+  return { text: `${exit.name} 中途停了，${why}。原因一般在下面最后几行`, failed: true };
+}
+
+/* 两种格式：Node 工具是 "[12:01:03] 内容"，警告和错误走 stderr；Autovisor 是 "[INFO] 内容" */
+const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
+function parseLine(entry) {
+  let text = String(entry.line).replace(ANSI, '').trimEnd();
+  let time = null;
+  let level = entry.err ? 'warn' : '';
+  let match = text.match(/^\[(\d{2}:\d{2}:\d{2})(?:\.\d+)?\]\s*/);
+  if (match) { time = match[1]; text = text.slice(match[0].length); }
+  match = text.match(/^\[(INFO|WARN|ERROR)\]\s*/);
+  if (match) {
+    level = match[1] === 'ERROR' ? 'error' : match[1] === 'WARN' ? 'warn' : level;
+    text = text.slice(match[0].length);
+  }
+  return { time: time || clock(entry.at), text: text.trim(), level };
+}
+
+/* 第一次装依赖：工具没有单独报这个阶段，按它们打的日志认 */
+const PREPARING = /正在安装依赖|首次\/变更环境部署|强制环境部署|安装 Python 依赖|未检测到 uv/;
+const PREPARED = /启动专用|连接 (Chrome|Edge)|程序启动中|正在启动 .*浏览器|环境已就绪/;
+const phaseAfter = (phase, text) => (PREPARING.test(text) ? 'prepare' : PREPARED.test(text) ? '' : phase);
+
 /* ---------- 抬头 ---------- */
 function tagFor(tool) {
-  const state = runOf(tool.id);
-  if (state.run) return el('span', { className: 'tag', textContent: `▶ ${since(state.run.startedAt)}` });
-  if (state.starting) return el('span', { className: 'tag', textContent: '…' });
-  if (state.exit && !state.seen && exitText(state.exit).failed) return el('span', { className: 'tag pen', textContent: '停了' });
-  return null;
+  if (!ui.linked) return el('span', { className: 'st' });
+  if (!tool.ready) return el('span', { className: 'st', textContent: '没找到' });
+  const s = runOf(tool.id);
+  if (s.run) return el('span', { className: 'st on', textContent: `▶ ${since(s.run.startedAt)}` });
+  if (s.starting) return el('span', { className: 'st', textContent: '启动中…' });
+  if (s.exit && !s.seen && exitText(s.exit).failed) return el('span', { className: 'st pen', textContent: '停了' });
+  return el('span', { className: 'st' });
 }
 
 function renderSubjects() {
   $('subjects').replaceChildren(...ui.tools.map((tool) => {
     const picked = ui.picked?.id === tool.id;
-    const name = el('span', { className: picked ? 'hl' : '', textContent: tool.name });
+    const name = el('span', { className: `name${picked ? ' hl' : ''}`, textContent: tool.name });
+    const live = Boolean(runOf(tool.id).run);
     const button = el('button', {
       type: 'button',
-      className: `subject${tool.ready ? '' : ' missing'}`,
+      className: `subject${tool.ready ? '' : ' missing'}${live ? ' live' : ''}`,
       title: tool.ready ? tool.summary : `没找到：${tool.dir}`,
       onclick: () => {
         if (picked) return;
@@ -367,7 +515,7 @@ function renderSubjects() {
         $('error').textContent = '';
         rememberPick(tool.id);
         render({ log: true });
-        swipe(name);
+        swipe($('subjects').querySelector('.hl'));
       },
     }, name, tagFor(tool));
     button.setAttribute('aria-pressed', String(picked));
@@ -377,11 +525,13 @@ function renderSubjects() {
 
 function renderLead() {
   const lead = $('lead');
+  $('lead-margin').textContent = '';
   if (!ui.linked) {
+    $('lead-margin').append(el('span', { className: 'pen', textContent: '断开了' }));
     lead.replaceChildren(
-      el('p', { className: 'pen', textContent: '和启动器断开了。' }),
+      el('p', { className: 'pen-strong', textContent: '和启动器断开了。' }),
       el('p', { textContent: inWindow
-        ? '关掉这个窗口，再重新打开网课助手。'
+        ? '关掉这个窗口重新打开网课助手。'
         : '终端窗口关掉的话，重新运行 start.cmd（Linux / macOS 是 start.sh），打开它给的新地址。' }),
     );
     return;
@@ -390,19 +540,34 @@ function renderLead() {
   if (!tool) { lead.replaceChildren(el('p', { textContent: '选一个平台。三个平台可以同时跑，开始一个之后再切到别的平台接着开。' })); return; }
   if (!tool.ready) {
     lead.replaceChildren(
-      el('p', { className: 'pen' }, `没找到${tool.name}：`, el('span', { className: 'path', textContent: tool.dir })),
-      el('p', { textContent: '仓库放在别处的话，在启动器目录里建一个 tools.local.json 写上实际路径（README 里有例子），再刷新这个页面。' }),
+      el('p', { className: 'pen-strong' }, `没找到${tool.name}的程序目录：`),
+      el('p', {}, el('span', { className: 'path', textContent: tool.dir })),
+      el('p', { textContent: '程序放在别处的话，在启动器目录里建一个 tools.local.json 写上实际路径（README 里有例子），再重新打开网课助手。' }),
     );
     return;
   }
   lead.replaceChildren(el('p', { textContent: tool.hint }));
 }
 
-/* ---------- 表单 ---------- */
+/* ---------- 开始前：一行摘要 + 静音，其余设置收起来 ---------- */
+const chevron = () => {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 10 10');
+  svg.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS(ns, 'path');
+  p.setAttribute('d', 'M1.5 3.5 5 7l3.5-3.5');
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', 'currentColor');
+  p.setAttribute('stroke-width', '1.6');
+  svg.append(p);
+  return svg;
+};
+
 function field(tool, option) {
   const key = keyOf(option);
-  const id = `f-${tool.id}-${key.replace(/[^\w-]/g, '_')}`;
-  const value = initialValue(tool, option);
+  const id = `f-${tool.id}-${domId(key)}`;
+  const value = initialValue(option);
   const wrong = ui.invalid.has(option.label);
   const help = option.help ? el('span', { className: 'help', textContent: option.help }) : null;
 
@@ -410,13 +575,16 @@ function field(tool, option) {
     const box = el('input', { type: 'checkbox', id, checked: Boolean(value) });
     box.dataset.key = key;
     box.dataset.kind = 'bool';
-    const warn = el('span', { className: 'help pen', textContent: '取消静音后视频会外放声音', hidden: Boolean(value) });
-    if (option.role === 'mute') box.addEventListener('change', () => { warn.hidden = box.checked; });
+    if (option.role === 'mute') {
+      const warn = el('span', { className: 'wrong', textContent: '取消静音后视频会外放声音', hidden: Boolean(value) });
+      box.addEventListener('change', () => { warn.hidden = box.checked; });
+      return el('div', { className: 'row field mute-row' },
+        el('span', { className: 'margin' }),
+        el('div', { className: 'body' }, el('label', { className: 'check', htmlFor: id }, box, el('span', { textContent: option.label })), warn));
+    }
     return el('div', { className: 'row field' },
       el('span', { className: 'margin' }),
-      el('div', { className: 'body' },
-        el('label', { className: 'check', htmlFor: id }, box, el('span', { textContent: option.label })),
-        option.role === 'mute' ? warn : help));
+      el('div', { className: 'body' }, el('label', { className: 'check', htmlFor: id }, box, el('span', { textContent: option.label })), help));
   }
 
   if (option.type === 'select') {
@@ -436,14 +604,14 @@ function field(tool, option) {
 
   const input = el('input', {
     id,
-    className: `blank${option.type === 'number' ? ' short' : ''}${option.type === 'text' && option.required ? ' wide' : ''}`,
-    type: option.type === 'number' ? 'number' : option.type === 'password' ? 'password' : 'text',
+    className: `blank${option.type === 'number' ? ' short' : ''}`,
+    type: option.type === 'password' ? 'password' : 'text',
+    inputMode: option.type === 'number' ? 'numeric' : 'text',
     value: value === undefined || value === null ? '' : String(value),
     placeholder: option.placeholder || '',
     autocomplete: option.type === 'password' ? 'current-password' : 'off',
     spellcheck: false,
   });
-  if (option.type === 'number') input.min = '0';
   input.dataset.key = key;
   input.dataset.kind = option.type;
   input.addEventListener('input', () => {
@@ -457,7 +625,7 @@ function field(tool, option) {
 
 function values() {
   const out = {};
-  for (const input of $('form').querySelectorAll('[data-key]')) {
+  for (const input of $('setup').querySelectorAll('[data-key]')) {
     if (input.dataset.kind === 'bool') out[input.dataset.key] = input.checked;
     else if (input.dataset.kind === 'select') { if (input.checked) out[input.dataset.key] = input.value; }
     else out[input.dataset.key] = input.value;
@@ -465,16 +633,17 @@ function values() {
   return out;
 }
 
-/* 运行中把表单收成一行：这次用了什么设置 */
-function summarize(tool, used) {
+/* 一份设置写成一行字：开始前（不含静音，静音单独一行）和在跑时（含静音）共用 */
+function summarize(tool, used, { mute = true } = {}) {
   const parts = [];
   for (const option of tool.options) {
     const key = keyOf(option);
     if (!(key in used) || option.type === 'password') continue;
     const value = used[key];
     if (option.type === 'bool') {
-      if (option.role === 'mute') parts.push(value ? el('span', { textContent: '静音' }) : el('span', { className: 'pen', textContent: '会外放声音' }));
-      else if (value) parts.push(el('span', { textContent: option.label }));
+      if (option.role === 'mute') {
+        if (mute) parts.push(value ? el('span', { textContent: '静音' }) : el('span', { className: 'wrong', textContent: '会外放声音' }));
+      } else if (value) parts.push(el('span', { textContent: option.label }));
       continue;
     }
     if (option.type === 'select') {
@@ -484,107 +653,111 @@ function summarize(tool, used) {
     }
     const text = String(value ?? '').trim();
     if (!text) continue;
-    parts.push(el('span', { textContent: `${option.label} ${text.length > 36 ? `${text.slice(0, 36)}…` : text}` }));
+    parts.push(el('span', { textContent: `${option.label} ${text.length > 24 ? `${text.slice(0, 24)}…` : text}` }));
   }
   const out = [];
   parts.forEach((part, i) => { if (i) out.push('，'); out.push(part); });
   return out.length ? out : ['默认设置'];
 }
 
-/* 切换平台时才重画表单，不然别的平台的日志每来一行，这边填到一半的字就没了 */
+/* 切换平台、展开收起时才重画表单，不然别的平台的日志每来一行，这边填到一半的字就没了 */
 let formFor = '';
-function renderForm() {
+function renderSetup() {
   const tool = ui.picked;
   const state = cur();
-  const isRunning = Boolean(state.run);
-  const show = Boolean(tool && tool.ready && ui.linked && !isRunning);
-  const key = show ? tool.id : '';
-  $('form').hidden = !show;
-  if (key !== formFor) {
-    $('form').replaceChildren(...(show ? tool.options.map((option) => field(tool, option)) : []));
-    formFor = key;
+  const show = Boolean(tool && tool.ready && ui.linked && !state.run);
+  const key = show ? `${tool.id}:${ui.open[tool.id] ? 'open' : 'shut'}` : '';
+  $('setup').hidden = !show;
+  if (key === formFor) return;
+  formFor = key;
+  if (!show) { $('setup').replaceChildren(); return; }
+
+  const open = Boolean(ui.open[tool.id]);
+  const others = tool.options.filter((o) => o.role !== 'mute');
+  const mute = tool.options.find((o) => o.role === 'mute');
+  const text = el('span', { className: 'setup-text', id: 'setup-text' });
+  const toggle = el('button', {
+    type: 'button',
+    className: 'toggle',
+    onclick: () => { ui.open[tool.id] = !open; keepValues(tool); renderSetup(); $('setup').querySelector('.toggle')?.focus(); },
+  }, open ? '收起' : '改设置', chevron());
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.setAttribute('aria-controls', 'more');
+
+  /* 收起时其余字段也在页面里（藏着），开始时照样带上 */
+  const more = el('div', { id: 'more', hidden: !open }, ...others.map((o) => field(tool, o)));
+  $('setup').replaceChildren(
+    el('div', { className: 'row setup-head' },
+      el('span', { className: 'margin', textContent: open ? '全部设置' : '设置' }),
+      el('div', { className: 'body' }, open ? null : text, toggle)),
+    more,
+    mute ? field(tool, mute) : null,
+  );
+  if (!open) $('setup-text').replaceChildren(...summarize(tool, values(), { mute: false }));
+}
+
+/* 收起/展开、开始前把手上的值记下来，重画后还是这次填的 */
+function keepValues(tool) {
+  const picked = values();
+  for (const option of tool.options) {
+    const key = keyOf(option);
+    if (key in picked && option.type !== 'password') option.remembered = picked[key];
   }
+}
 
-  $('summary-row').hidden = !isRunning;
-  if (isRunning) $('summary').replaceChildren(...summarize(tool, state.run.values || {}));
-
-  $('actions').hidden = !(tool && tool.ready && ui.linked);
-  $('start').hidden = isRunning;
+function renderActions() {
+  const tool = ui.picked;
+  const state = cur();
+  const usable = Boolean(tool && tool.ready && ui.linked);
+  const isRunning = Boolean(state.run);
+  $('actions').hidden = !usable || isRunning;
   $('start').disabled = state.starting;
-  $('start').textContent = state.starting ? '正在启动…' : `开始${tool ? `：${tool.name}` : ''}`;
-  $('stop').hidden = !isRunning;
+  $('start').textContent = state.starting ? '正在启动…' : `开始：${tool ? tool.name : ''}`;
+
+  $('summary-row').hidden = !(usable && isRunning);
+  if (usable && isRunning) $('summary').replaceChildren(...summarize(tool, state.run.values || {}));
   $('stop').disabled = state.stopping;
   $('stop').textContent = state.stopping ? '正在停止…' : `停止：${tool ? tool.name : ''}`;
+  $('stop-help').hidden = !state.stopping;
 }
 
 /* ---------- 运行情况 ---------- */
-const ANSI = /\u001b\[[0-9;]*[A-Za-z]/g;
-const clock = (at) => new Date(at).toTimeString().slice(0, 8);
-
-/* 两种格式：Node 工具是 "[12:01:03] 内容"，警告和错误走 stderr；
- * Autovisor 是 "[INFO] 内容"，不带时间 */
-function parseLine(entry) {
-  let text = String(entry.line).replace(ANSI, '').trimEnd();
-  let time = null;
-  let level = entry.err ? 'warn' : '';
-  let match = text.match(/^\[(\d{2}:\d{2}:\d{2})(?:\.\d+)?\]\s*/);
-  if (match) { time = match[1]; text = text.slice(match[0].length); }
-  match = text.match(/^\[(INFO|WARN|ERROR)\]\s*/);
-  if (match) {
-    level = match[1] === 'ERROR' ? 'error' : match[1] === 'WARN' ? 'warn' : level;
-    text = text.slice(match[0].length);
-  }
-  return { time: time || clock(entry.at), text: text.trim(), level };
-}
-
-/* 日志按平台存着；只有选中的平台才画到页面上 */
-function store(id, entries) {
-  const state = runOf(id);
-  for (const entry of entries) {
-    const line = parseLine(entry);
-    if (!line.text) continue;
-    state.lastLine = line.text;
-    state.lines.push(line);
-  }
-  if (state.lines.length > MAX_LOG) state.lines.splice(0, state.lines.length - MAX_LOG);
-}
-
 const item = (line) => el('li', { className: line.level }, el('time', { textContent: line.time }), el('span', { textContent: line.text }));
 
 function drawLog() {
   const log = $('log');
   log.replaceChildren(...cur().lines.map(item));
   log.scrollTop = log.scrollHeight;
+  $('to-latest').hidden = true;
 }
-
 function appendLog(lines) {
   const log = $('log');
   const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
   for (const line of lines) log.append(item(line));
   while (log.children.length > MAX_LOG) log.firstElementChild.remove();
   if (stick) log.scrollTop = log.scrollHeight;
+  else $('to-latest').hidden = false;
 }
+$('log').addEventListener('scroll', () => {
+  const log = $('log');
+  if (log.scrollHeight - log.scrollTop - log.clientHeight < 8) $('to-latest').hidden = true;
+});
+$('to-latest').addEventListener('click', () => {
+  const log = $('log');
+  log.scrollTop = log.scrollHeight;
+  $('to-latest').hidden = true;
+});
 
-function since(start) {
-  const s = Math.max(0, Math.floor((Date.now() - start) / 1000));
-  const h = Math.floor(s / 3600);
-  const m = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, '0');
-  return `${h ? `${h}:` : ''}${m}:${String(s % 60).padStart(2, '0')}`;
-}
-
-function exitText(exit) {
-  if (exit.stopped) return { text: `${exit.name} 已停止`, failed: false };
-  if (exit.code === 0) return { text: `${exit.name} 跑完了`, failed: false };
-  const why = exit.code === null ? `被系统结束（${exit.signal}）` : `退出码 ${exit.code}`;
-  return { text: `${exit.name} 中途停了，${why}。原因一般在下面最后几行`, failed: true };
-}
+const NOTE_RUN = '播放视频的那个浏览器窗口别最小化，也别在里面切到别的标签页；被别的窗口盖住没关系。';
+const NOTE_PREP = '第一次运行要先装依赖，一般一两分钟。下面的记录还在往下走，就是没卡住。';
 
 let lastPhase = '';
 function renderRun() {
   const state = cur();
   const isRunning = Boolean(state.run);
   $('run').hidden = !isRunning && !state.exit && !state.lines.length;
-  $('note-row').hidden = !isRunning;
+  $('status-row').hidden = !ui.linked;
+  $('note-row').hidden = !isRunning || !ui.linked;
 
   const status = $('status');
   const text = $('status-text');
@@ -592,84 +765,104 @@ function renderRun() {
   if (isRunning) {
     text.textContent = state.toolStatus || state.lastLine || '正在启动…';
     status.className = 'status';
-    $('elapsed').textContent = `已运行 ${since(state.run.startedAt)}`;
-    phase = `run:${ui.picked.id}:${state.run.startedAt}:${state.toolStatus}`;
+    $('elapsed').replaceChildren('已运行', el('b', { id: 'elapsed-time', textContent: since(state.run.startedAt) }));
+    $('note').textContent = state.phase === 'prepare' ? NOTE_PREP : NOTE_RUN;
+    $('note').className = `note${state.phase === 'prepare' ? ' prep' : ''}`;
+    phase = `run:${ui.picked.id}:${state.run.startedAt}:${state.phase}:${state.toolStatus.replace(/[（(].*$/, '')}`;
   } else if (state.exit) {
     const { text: said, failed } = exitText(state.exit);
     text.textContent = said;
     status.className = `status ended${failed ? ' failed' : ''}`;
-    $('elapsed').textContent = clock(state.exit.at);
+    $('elapsed').replaceChildren(failed ? '停在' : '结束于', el('b', { textContent: clock(state.exit.at) }));
     phase = `exit:${state.exit.at}`;
   } else {
     text.textContent = '';
-    $('elapsed').textContent = '';
+    $('elapsed').replaceChildren();
     phase = '';
   }
-  /* 只在阶段变化时重画荧光（开始、工具报新状态、切换平台），日志一行一行来时不闪 */
+  renderFresh();
+  /* 只在阶段变化时重画荧光（开始、换了一节、切换平台），日志一行一行来时不闪 */
   if (phase !== lastPhase && isRunning) swipe(text);
   lastPhase = phase;
 }
 
+function renderFresh() {
+  const state = cur();
+  if (!state.lines.length) { $('fresh').textContent = ''; return; }
+  $('fresh').textContent = state.run && ui.linked ? `最新一行 ${ago(state.lastAt)}` : `共 ${state.lines.length} 行`;
+}
+
 function swipe(node) {
-  if (!node.classList.contains('hl')) return;
+  if (!node || !node.classList.contains('hl')) return;
   node.classList.add('dry');
   requestAnimationFrame(() => requestAnimationFrame(() => node.classList.remove('dry')));
 }
 
-/* ---------- 标签页标题和图标：控制台在后台时也能一眼看出状态 ---------- */
-const COLORS = { idle: ['#FAFBFC', '#1E2B4A'], run: ['#F2E35B', '#1E2B4A'], done: ['#1E2B4A', '#1E2B4A'], fail: ['#C2362F', '#C2362F'] };
-let lastIcon = '';
-function reflect() {
+/* ---------- 窗口标题：窗口版同步到窗口标题和任务栏，浏览器里是标签页标题 ---------- */
+function windowTitle() {
   const live = running();
-  /* 中途停了、还没切过去看的，优先报：红笔比荧光笔要紧 */
   const failed = ui.tools.find((tool) => {
-    const state = runOf(tool.id);
-    return !state.run && state.exit && !state.seen && exitText(state.exit).failed;
+    const s = runOf(tool.id);
+    return !s.run && s.exit && !s.seen && exitText(s.exit).failed;
   });
-  let mode = 'idle';
-  let title = '网课助手';
-  if (live.length === 1) {
-    mode = 'run';
-    title = `▶ ${live[0].name} ${since(runOf(live[0].id).run.startedAt)}`;
-  } else if (live.length > 1) {
-    mode = 'run';
-    title = `▶ ${live.map((tool) => tool.name).join('、')}`;
-  }
-  if (failed) {
-    mode = 'fail';
-    title = `✕ ${failed.name} 停了${live.length ? `（还有 ${live.length} 个在跑）` : ''}`;
-  } else if (!live.length) {
-    const ended = ui.picked && runOf(ui.picked.id).exit;
-    if (ended) {
-      mode = 'done';
-      title = `${ended.name} ${ended.stopped ? '已停止' : '跑完了'}`;
-    }
-  }
-  if (!ui.linked) { mode = 'fail'; title = '✕ 和启动器断开了'; }
-  document.title = title;
-  if (mode === lastIcon) return;
-  lastIcon = mode;
-  const [fill, ring] = COLORS[mode];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect x="4" y="4" width="24" height="24" rx="6" fill="${fill}" stroke="${ring}" stroke-width="3"/></svg>`;
-  $('favicon').href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
+  if (!ui.linked) return '✕ 和启动器断开了';
+  if (failed) return `✕ ${failed.name} 停了${live.length ? `（还有 ${live.length} 个在跑）` : ''}`;
+  if (live.length === 1) return `▶ ${live[0].name} ${since(runOf(live[0].id).run.startedAt)}`;
+  if (live.length > 1) return `▶ ${live.map((t) => t.name).join('、')}`;
+  return '网课助手';
 }
+const reflect = () => { document.title = windowTitle(); };
 
 function render({ log = false } = {}) {
   renderSubjects();
   renderLead();
-  renderForm();
+  renderSetup();
+  renderActions();
   if (log) drawLog();
   renderRun();
+  fitLog();
   reflect();
 }
 
+/* 日志占满窗口剩下的高度（按整行取），窗口拉大就多看几行；剩得太少时至少 4 行，整页滚动 */
+function fitLog() {
+  const log = $('log');
+  if ($('run').hidden) return;
+  const stick = log.scrollHeight - log.scrollTop - log.clientHeight < 8;
+  const sheet = getComputedStyle(document.querySelector('.sheet'));
+  const below = parseFloat(sheet.paddingBottom) + parseFloat(getComputedStyle(document.body).paddingBottom) + 1;
+  const room = window.innerHeight - (log.getBoundingClientRect().top + window.scrollY) - below;
+  const line = parseFloat(getComputedStyle(log).lineHeight) || 28;
+  log.style.maxHeight = `${Math.max(line * 4, Math.floor(room / line) * line)}px`;
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+window.addEventListener('resize', fitLog);
+
 setInterval(() => {
-  if (!running().length) return;
+  if (!ui.linked) return;
   const state = cur();
-  if (state.run) $('elapsed').textContent = `已运行 ${since(state.run.startedAt)}`;
-  renderSubjects();
+  if (state.run && $('elapsed-time')) $('elapsed-time').textContent = since(state.run.startedAt);
+  renderFresh();
+  if (running().length) renderSubjects();
   reflect();
 }, 1000);
+
+/* ---------- 日志 ---------- */
+function store(id, entries) {
+  const state = runOf(id);
+  const added = [];
+  for (const entry of entries) {
+    const line = parseLine(entry);
+    if (!line.text) continue;
+    state.lastLine = line.text;
+    state.lastAt = entry.at || Date.now();
+    state.phase = phaseAfter(state.phase, line.text);
+    state.lines.push(line);
+    added.push(line);
+  }
+  if (state.lines.length > MAX_LOG) state.lines.splice(0, state.lines.length - MAX_LOG);
+  return added;
+}
 
 /* ---------- 开始 / 停止 ---------- */
 async function start() {
@@ -679,65 +872,79 @@ async function start() {
   if (state.starting || state.run) return;
   const picked = values();
   $('error').textContent = '';
+  keepValues(tool);
 
-  ui.invalid = new Set(tool.options
-    .filter((option) => option.required && !String(picked[keyOf(option)] ?? '').trim())
-    .map((option) => option.label));
-  if (ui.invalid.size) {
-    formFor = '';
-    renderForm();
-    $('error').textContent = `还没填：${[...ui.invalid].join('、')}`;
-    $('form').querySelector('.margin.wrong')?.closest('.field')?.querySelector('input')?.focus();
-    return;
-  }
-
-  /* 后端启动成功时会记下这些值；这里同步改掉手上的那份，停了以后重画表单还是这次填的 */
-  for (const option of tool.options) {
-    const key = keyOf(option);
-    if (key in picked && option.type !== 'password') option.remembered = picked[key];
-  }
+  const bad = tool.options.filter((o) => o.type === 'number' && String(picked[keyOf(o)] ?? '').trim() && !/^\d+$/.test(String(picked[keyOf(o)]).trim()));
+  if (bad.length) { failStart(tool, bad.map((o) => o.label), `${bad.map((o) => o.label).join('、')} 要填整数`); return; }
 
   state.starting = true;
   render();
   try {
-    const res = await api('start', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ tool: tool.id, values: picked }),
-    });
+    const res = await post('start', { tool: tool.id, values: picked });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const missing = /^还没填：(.+)$/.exec(body.error || '');
-      if (missing) { ui.invalid = new Set(missing[1].split('、')); formFor = ''; }
       state.starting = false;
-      render();
-      if (ui.picked?.id === tool.id) $('error').textContent = body.error || `没能启动（HTTP ${res.status}）`;
+      const missing = /^还没填：(.+)$/.exec(body.error || '');
+      failStart(tool, missing ? missing[1].split('、') : [], body.error || `没能启动（HTTP ${res.status}）`);
     }
   } catch (e) {
     state.starting = false;
     render();
-    $('error').textContent = '连不上启动器，终端窗口还开着吗？';
+    $('error').textContent = '连不上启动器。';
   }
 }
-
-$('form').addEventListener('submit', (event) => { event.preventDefault(); start(); });
-$('form').addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && event.target.matches('input.blank')) { event.preventDefault(); start(); }
-});
+function failStart(tool, labels, message) {
+  ui.invalid = new Set(labels);
+  if (labels.length) ui.open[tool.id] = true;
+  formFor = '';
+  render();
+  if (ui.picked?.id !== tool.id) return;
+  $('error').textContent = message;
+  $('setup').querySelector('.margin.wrong')?.closest('.field')?.querySelector('input')?.focus();
+}
 $('start').addEventListener('click', start);
+$('setup').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.matches('input.blank')) { e.preventDefault(); start(); }
+});
+$('setup').addEventListener('change', () => {
+  const t = $('setup-text');
+  if (t && ui.picked) t.replaceChildren(...summarize(ui.picked, values(), { mute: false }));
+});
 $('stop').addEventListener('click', async () => {
   const tool = ui.picked;
   if (!tool) return;
   const state = runOf(tool.id);
   state.stopping = true;
-  renderForm();
+  renderActions();
   try {
-    await api('stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tool: tool.id }) });
+    await post('stop', { tool: tool.id });
   } catch (e) {
     state.stopping = false;
-    renderForm();
+    renderActions();
   }
 });
+
+/* ---------- 关窗口确认（窗口版：外壳截下关闭，调这里问一句） ---------- */
+function askClose() {
+  const live = running();
+  $('confirm-title').textContent = `还有 ${live.length} 个平台在跑，关掉窗口会把它们都停掉。`;
+  $('confirm-who').replaceChildren(...live.flatMap((t, i) => [
+    i ? '，' : '',
+    el('b', { textContent: t.name }),
+    ` 已运行 ${since(runOf(t.id).run.startedAt)}`,
+  ]));
+  if (!$('confirm').open) $('confirm').showModal();
+  $('confirm-cancel').focus();
+}
+const closeWindow = () => { try { window.courseHelperClose?.(); } catch (e) { /* 不在窗口版里 */ } };
+$('confirm-cancel').addEventListener('click', () => $('confirm').close());
+$('confirm-ok').addEventListener('click', () => { $('confirm').close(); closeWindow(); });
+/* 外壳先等这边应一声；页面没反应（脚本坏了之类）它就改用系统对话框 */
+window.courseHelperAskClose = () => {
+  try { window.courseHelperAck?.(); } catch (e) { /* 不在窗口版里 */ }
+  if (!ui.linked || !running().length) { closeWindow(); return; }
+  askClose();
+};
 
 /* ---------- 实时事件 ---------- */
 function load(id, data) {
@@ -748,6 +955,7 @@ function load(id, data) {
   state.starting = false;
   state.stopping = false;
   state.lastLine = '';
+  state.phase = '';
   state.lines = [];
   store(id, data.lines || []);
 }
@@ -772,18 +980,20 @@ function handle(data) {
     return;
   }
   if (data.type === 'line') {
-    const before = state.lines.length;
-    store(id, [data]);
+    const phase = state.phase;
+    const added = store(id, [data]);
     if (!shown) return;
-    appendLog(state.lines.slice(before));
-    if ($('run').hidden) renderRun();
-    else if (!state.toolStatus && state.run) $('status-text').textContent = state.lastLine;
+    appendLog(added);
+    if ($('run').hidden || phase !== state.phase) { renderRun(); fitLog(); }
+    else if (!state.toolStatus && state.run) { $('status-text').textContent = state.lastLine; renderFresh(); }
+    else renderFresh();
     return;
   }
   if (data.type === 'exit') {
     state.run = null;
     state.exit = data;
     state.stopping = false;
+    state.phase = '';
     state.seen = shown;
     render();
   }
@@ -792,7 +1002,7 @@ function handle(data) {
 function connect() {
   const events = new EventSource(`/api/events?${query}`);
   events.onopen = () => { if (!ui.linked) { ui.linked = true; formFor = ''; render(); } };
-  events.onerror = () => { if (ui.linked) { ui.linked = false; render(); } };
+  events.onerror = () => { if (ui.linked) { ui.linked = false; formFor = ''; render(); } };
   events.onmessage = (event) => handle(JSON.parse(event.data));
 }
 
@@ -800,17 +1010,17 @@ function connect() {
 const first = await api('tools').then((res) => (res.ok ? res.json() : null)).catch(() => null);
 if (!first) {
   $('lead').replaceChildren(
-    el('p', { className: 'pen', textContent: token ? '打不开控制台：口令不对，或者启动器已经关了。' : '地址里缺少口令。' }),
-    el('p', { textContent: '回到终端，复制它打印的那条完整地址（带 ?token= 的）再打开。' }),
+    el('p', { className: 'pen-strong', textContent: token ? '打不开控制台：口令不对，或者启动器已经关了。' : '地址里缺少口令。' }),
+    el('p', { textContent: inWindow ? '关掉这个窗口重新打开网课助手。' : '回到终端，复制它打印的那条完整地址（带 ?token= 的）再打开。' }),
   );
   $('actions').hidden = true;
-  $('form').hidden = true;
+  $('setup').hidden = true;
   ui.linked = false;
   reflect();
 } else {
   ui.tools = first.tools;
   const live = Object.values(first.state.runs || {}).find((run) => run.running);
-  ui.picked = toolById(first.picked) || toolById(live?.tool) || null;
+  ui.picked = toolById(first.picked) || toolById(live?.tool) || ui.tools[0] || null;
   render();
   connect();
 }

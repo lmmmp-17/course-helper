@@ -63,3 +63,19 @@ export function summarize(tool, used) {
     }
     return parts.length ? parts : [{ text: '默认设置' }];
 }
+
+/* 第一次装依赖：工具没有单独报这个阶段，按它们打的日志认。
+ * run.cmd 每次都会打「检查依赖」，已经装好时一闪而过，不算 */
+const PREPARING = /正在安装依赖|首次\/变更环境部署|强制环境部署|安装 Python 依赖|未检测到 uv/;
+const PREPARED = /启动专用|连接 (Chrome|Edge)|程序启动中|正在启动 .*浏览器|环境已就绪/;
+export const phaseAfter = (phase, text) => (PREPARING.test(text) ? 'prepare' : PREPARED.test(text) ? '' : phase);
+
+export const NOTE_RUN = '播放视频的那个浏览器窗口别最小化，也别在里面切到别的标签页；被别的窗口盖住没关系。';
+export const NOTE_PREP = '第一次运行要先装依赖，一般一两分钟。下面的记录还在往下走，就是没卡住。';
+
+export function ago(at, now = Date.now()) {
+    const s = Math.max(0, Math.floor((now - at) / 1000));
+    if (s < 3) return '刚刚';
+    if (s < 60) return `${s} 秒前`;
+    return `${Math.floor(s / 60)} 分钟前`;
+}

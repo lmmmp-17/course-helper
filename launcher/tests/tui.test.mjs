@@ -103,59 +103,84 @@ async function setup(t) {
     return { app, runner, settings, children, calls, screen, press, tick, started, dirs, advance: (ms) => { offset += ms; } };
 }
 
-test('终端版：表单、勾选、单选、只收数字的输入框、取消静音的警告', async (t) => {
-    const { screen, press } = await setup(t);
+test('终端版：设置默认收起成一行；M 切静音，C 展开，Esc 收起；数字填错开始时拦下', async (t) => {
+    const { screen, press, calls } = await setup(t);
     let view = screen();
-    assert.match(view, /网课助手/);
-    assert.match(view, /学习通/);
-    assert.match(view, /最多播几节/);
-    assert.match(view, /\[ 开始：学习通 \]/);
+    assert.match(view, /网课助手 {6}1 {2}学习通 /);
+    assert.match(view, / {10}设置 {2}倍速 最高，浏览器 自动/, '页边 14 列右对齐');
+    assert.match(view, /\[x\] 静音/);
+    assert.match(view, / Enter 开始：学习通 /);
+    assert.match(view, /1 2 3 切换平台 {4}Enter 开始 {4}M 静音开关 {4}C 改设置 {4}Q 退出/);
 
-    press('1', 'a', '2');          /* 第一项是「最多播几节」，只收数字 */
-    assert.match(screen(), /\[12_/);
-    press('down', 'right');        /* 倍速：最高 → 不改 */
-    assert.match(screen(), /\( \) 最高 {2}\(o\) 不改/);
-    press('down', ' ');            /* 静音：取消 */
+    press('m');
     view = screen();
-    assert.match(view, /\[ \] 静音/);
-    assert.match(view, /取消静音后视频会外放声音/);
+    assert.match(view, /\[ \] 静音 {3}取消静音后视频会外放声音/);
+    press('m');
+
+    press('c');
+    view = screen();
+    assert.match(view, /全部设置/);
+    assert.match(view, /最多播几节 {2}> ______ {3}留空 = 不限/);
+    assert.match(view, /Tab \/ 上下 换一项 {4}空格 勾选、切换 {4}Esc 收起 {4}Enter 开始/);
+    press('3', '.', '5');          /* 展开时输入框里的数字是字，不是切平台 */
+    assert.match(screen(), /> 3\.5_/);
+    press('enter');
+    assert.match(screen(), /最多播几节 要填整数/);
+    assert.equal(calls.length, 0, '填错了不启动');
+    press('backspace', 'backspace');
+    press('tab', 'right');         /* 倍速：最高 → 不改 */
+    assert.match(screen(), /倍速 {2}> \( \) 最高 {2}\(o\) 不改/);
+    press('escape');
+    assert.match(screen(), /设置 {2}最多播几节 3，倍速 不改，浏览器 自动/);
 });
 
-test('终端版：三个平台同时跑，切换、状态、出错标记、按平台分开的日志', async (t) => {
+test('终端版：三个平台同时跑，1 2 3 切换、S 停止、装依赖的提醒、出错标记、按平台分开的记录', async (t) => {
     const { app, screen, press, started, children, calls, advance, settings } = await setup(t);
     press('enter');                /* 学习通 */
     await started(1);
-    assert.match(screen(), /\[ 停止：学习通 \]/);
-    assert.match(screen(), /这次的设置/);
-
-    children.xuexitong.stdout.emit('data', '[12:00:01] 课程共 6 章 42 节\n[12:00:02] 正在播放：1.3 函数的极限\n');
-    advance(65_000);
     let view = screen();
-    assert.match(view, /已运行 1:05/);
-    assert.match(view, /正在播放：1\.3 函数的极限/, '状态取最新一行');
-    assert.match(view, /12:00:01 {2}课程共 6 章 42 节/);
+    assert.match(view, /这次的设置 {2}倍速 最高，静音，浏览器 自动/);
+    assert.match(view, /1 2 3 切换平台 {4}S 停止：学习通/);
 
-    press('tab', 'enter');         /* 长江雨课堂 */
+    children.xuexitong.stdout.emit('data', '[12:00:00] 正在安装依赖（npm install，只装 playwright-core，不下载浏览器）...\n');
+    assert.match(screen(), /第一次运行要先装依赖，一般一两分钟/);
+    children.xuexitong.stdout.emit('data', '[12:00:01] 启动专用 Chrome（独立 profile）\n[12:00:02] 正在播放：1.3 函数的极限\n');
+    children.xuexitong.stderr.emit('data', '1.2 习题课 只剩测验，跳过\n');
+    advance(65_000);
+    view = screen();
+    assert.match(view, /播放视频的那个浏览器窗口别最小化/, '装完依赖换回平时的提醒');
+    assert.match(view, /^ {3}已运行 1:05 {3}1\.2 习题课/m, '页边右对齐；状态取最新一行');
+    assert.match(view, / {10}记录 {2}最新一行 1 分钟前/);
+    assert.match(view, / {6}12:00:02 {2}正在播放：1\.3 函数的极限/);
+    assert.match(view, /! 1\.2 习题课 只剩测验，跳过/, 'stderr 是注意');
+
+    press('2', 'enter');           /* 长江雨课堂 */
     await started(2);
-    press('tab', 'enter');         /* 智慧树 */
+    press('3', 'enter');           /* 智慧树 */
     await started(3);
     assert.deepEqual(calls[2].args, ['--config', 'config.linux.ini', '--wait-course']);
     assert.equal(settings.read().picked, 'autovisor', '切平台记下来，两个入口共用');
 
     /* 雨课堂在后面出错退出：没切过去看的，平台名旁边标「停了」 */
-    children.yuketang.stderr.emit('data', '课程目录加载超时\n');
+    children.yuketang.stdout.emit('data', '[ERROR] 课程目录加载超时\n');
     children.yuketang.emit('close', 1, null);
     view = screen().split('\n')[0];
-    assert.match(view, /学习通 {2}>1:05/);
-    assert.match(view, /长江雨课堂 {2}停了/);
-    assert.doesNotMatch(screen(), /课程共 6 章/, '日志按平台分开');
+    assert.match(view, /学习通 >1:05/);
+    assert.match(view, /长江雨课堂 停了/);
+    assert.doesNotMatch(screen(), /函数的极限/, '记录按平台分开');
 
-    press('backtab');              /* 切到雨课堂：看过了，标记消失 */
+    press('2');                    /* 切到雨课堂：看过了，标记消失 */
     view = screen();
-    assert.match(view, /长江雨课堂 中途停了，退出码 1/);
-    assert.match(view, /课程目录加载超时/);
+    assert.match(view, /停在 \d\d:\d\d:\d\d {2}长江雨课堂 中途停了，退出码 1/);
+    assert.match(view, /x 课程目录加载超时/);
+    assert.match(view, /记录 {2}共 1 行/);
+    assert.match(view, / Enter 再开始：长江雨课堂 /);
     assert.doesNotMatch(view.split('\n')[0], /停了/);
-    assert.equal(app.runs('xuexitong').run !== null, true);
+
+    press('1', 's');               /* 停学习通 */
+    assert.equal(children.xuexitong.stdinEnded, true);
+    assert.match(screen(), /正在停止\.\.\.一般几秒，最多 8 秒/);
+    assert.equal(app.runs('autovisor').run !== null, true, '别的平台不受影响');
 });
 
 test('终端版：有平台在跑时退出要确认；确认后停掉全部、等收尾', async (t) => {
@@ -179,15 +204,15 @@ test('终端版：有平台在跑时退出要确认；确认后停掉全部、�
     assert.deepEqual(runner.running(), []);
 });
 
-test('终端版：没在跑时 q 直接退出；输入框里的 q 是字', async (t) => {
+test('终端版：输入框里的 q 是字；没在跑时 q 直接退出', async (t) => {
     const { app, press, screen } = await setup(t);
-    press('tab', 'tab');           /* 智慧树：最后两项是手机号、密码 */
-    for (let i = 0; i < 5; i += 1) press('down');   /* Linux 上没有「把浏览器窗口移出屏幕」 */
+    press('3', 'c');               /* 智慧树展开：倍速、每门课、浏览器、滑块、手机号、密码、静音 */
+    press('tab', 'tab', 'tab', 'tab');
     press('q');
-    assert.match(screen(), /\[q_/, '手机号输入框里收到 q');
-    press('down', 'x', 'y');
-    assert.match(screen(), /\[\*\*_/, '密码显示成星号');
-    press('down', 'q');            /* 焦点在「开始」上 */
+    assert.match(screen(), /手机号 {2}> q_/, '手机号输入框里收到 q');
+    press('tab', 'x', 'y');
+    assert.match(screen(), /密码 {2}> \*\*_/, '密码显示成星号');
+    press('escape', 'q');
     await app.done;
 });
 

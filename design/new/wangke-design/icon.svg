@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>网课助手</title>
+  <!-- 墨水蓝底，作业本横格（小尺寸下自然消失），荧光笔一道，中间一个播放三角 -->
+  <rect x="1" y="1" width="30" height="30" rx="7" fill="#1E2B4A"/>
+  <path d="M4 7.5H28M4 25.5H28" stroke="#FFFFFF" stroke-opacity=".16" stroke-width="1"/>
+  <path d="M5.2 10.6 Q5 9.4 6.3 9.2 L25.6 8 Q27 7.9 27.1 9.3 L27.6 21.2 Q27.7 22.6 26.3 22.7 L6.9 23.9 Q5.6 24 5.5 22.7 Z" fill="#F2E35B"/>
+  <path d="M13 11.4 L13 20.6 L21.2 16 Z" fill="#1E2B4A" stroke="#1E2B4A" stroke-width="1.6" stroke-linejoin="round"/>
+</svg>
