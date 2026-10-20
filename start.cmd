@@ -1,15 +1,45 @@
 @echo off
 setlocal
+rem ---------------------------------------------------------------------------
+rem Everything above :main must stay ASCII. cmd reads a batch file line by line
+rem in the console's code page, and switching to UTF-8 halfway shifts the lines
+rem that follow (on a GBK console the Chinese comments below were run as
+rem commands). So when the console is not UTF-8 yet, switch it and run this
+rem file again in a fresh cmd, which then reads it from the top in UTF-8.
+rem ---------------------------------------------------------------------------
+if "%COURSE_CMD_SELF%"=="%~f0" goto :inner
 for /f "tokens=2 delims=:." %%c in ('chcp') do set "OLDCP=%%c"
+set "OLDCP=%OLDCP: =%"
+rem Pause at the end only when double-clicked, so an error doesn't vanish with
+rem the window. Never under the launcher (COURSE_UI=1): its stdin is a pipe
+rem that stays open, so pause would wait forever and the run would never end.
+set "PAUSE_AT_END="
+if "%COURSE_UI%"=="1" goto :no_pause
+echo %cmdcmdline% | findstr /i /c:"%~nx0" >nul && set "PAUSE_AT_END=1"
+:no_pause
+if "%OLDCP%"=="65001" goto :here
 chcp 65001 >nul
+set "COURSE_CMD_SELF=%~f0"
+cmd /d /c ""%~f0" %*"
+set "CODE=%errorlevel%"
+chcp %OLDCP% >nul
+goto :done
+:here
+call :main %*
+set "CODE=%errorlevel%"
+:done
+if defined PAUSE_AT_END pause
+exit /b %CODE%
+
+:inner
+call :main %*
+exit /b %errorlevel%
+
+:main
 rem 学习通 Playwright 版的入口（Windows）：双击运行即可。
 rem 第一次运行会自动安装依赖；连不上浏览器时会自动启动一个专用的 Chrome（没装就用 Edge）。
 rem 参数原样传给 run.mjs，比如在命令行里 start.cmd --max-sections 1
 cd /d "%~dp0playwright"
-
-rem 双击打开的窗口在结束时停一下，不然报错一闪就没了
-set "PAUSE_AT_END="
-echo %cmdcmdline% | findstr /i /c:"%~nx0" >nul && set "PAUSE_AT_END=1"
 
 where node >nul 2>nul
 if errorlevel 1 call :install_node
@@ -43,6 +73,4 @@ goto :fail
 :fail
 set "CODE=1"
 :end
-if defined PAUSE_AT_END pause
-chcp %OLDCP% >nul
 exit /b %CODE%
