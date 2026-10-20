@@ -14,6 +14,20 @@ import { entryFor, locate, configPath } from './tools.mjs';
 /* 工具用 [[status]] 前缀单独报"当前在干什么"，其余都是普通日志。
  * 没有这个前缀时界面就只显示原始输出，功能照常。 */
 const STATUS_PREFIX = '[[status]] ';
+const WINDOWS_GRACE_MS = 5000;
+
+/* Windows 上 .cmd 只能经 cmd.exe 启动。以前用 spawn(…, args, { shell: true })，Node 会
+ * 把参数原样拼进命令行，新版 Node 已经把这种用法标成弃用（DEP0190）。这里自己拼：
+ * cmd.exe /d /s /c ""入口" "参数"…"，和 shell: true 生成的是同一种命令行。
+ * 参数只来自登记表和界面上的选项；带 cmd 特殊字符的一律拒绝，免得被当成命令执行。 */
+const CMD_UNSAFE = /["%^&|<>\r\n]/;
+export function windowsCommand(script, args) {
+    for (const arg of [script, ...args]) {
+        if (CMD_UNSAFE.test(arg)) throw new Error(`参数里有不能用的字符：${arg}`);
+    }
+    const line = [script, ...args].map((arg) => `"${arg}"`).join(' ');
+    return ['cmd.exe', ['/d', '/s', '/c', `"${line}"`]];
+}
 const MAX_LINES = 400;
 
 export function createRunner({ root, platform = process.platform, spawnProcess = spawn } = {}) {
@@ -114,9 +128,18 @@ export function createRunner({ root, platform = process.platform, spawnProcess =
         const { child } = current;
         if (platform === 'win32') {
             /* Windows 上入口是经 cmd.exe 起的，kill 只结束 cmd.exe，真正干活的
-             * node / python 会留在后台接着播。只能按进程树结束——代价是工具
-             * 来不及打印收尾的总结。 */
-            spawnProcess('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+             * node / python 会留在后台接着播，只能按进程树结束。
+             * 先不带 /F：它给进程树里的窗口发关闭消息。智慧树的 Edge 这样关掉，
+             * Playwright 会自己删掉临时 profile，程序也正常收尾；带 /F 直接杀，
+             * %TEMP% 里每停一次就留下一个 playwright_chromiumdev_profile-*（实测）。
+             * 命令行进程没有窗口，关不掉，过几秒再带 /F 强制结束整棵树。 */
+            const tree = ['/pid', String(child.pid), '/T'];
+            spawnProcess('taskkill', tree, { windowsHide: true }).on?.('error', () => {});
+            setTimeout(() => {
+                if (child.exitCode === null && child.signalCode === null) {
+                    spawnProcess('taskkill', [...tree, '/F'], { windowsHide: true }).on?.('error', () => {});
+                }
+            }, WINDOWS_GRACE_MS).unref?.();
             return true;
         }
         /* 先温和地停：两个 Node 工具收到 SIGINT 会自己收尾。8 秒后还没退出就强制结束。
@@ -155,18 +178,15 @@ export function createRunner({ root, platform = process.platform, spawnProcess =
                     const name = await writeConfig(tool, dir, values);
                     args.push('--config', name);
                 }
+                args.push(...(tool.fixedArgs || []));
 
                 const entry = entryFor(tool, platform);
-                /* Windows 上 .cmd 必须经过 shell 才能启动；命令本身是登记表里写死的，
-                 * 参数单独传，不拼进命令行字符串 */
-                const useShell = platform === 'win32';
-                const command = useShell ? `"${resolve(dir, entry)}"` : entry;
-                child = spawnProcess(command, args, {
-                    cwd: dir,
-                    shell: useShell,
-                    /* 让工具知道输出要给界面看：状态行改成 [[status]] 单独一行 */
-                    env: { ...process.env, COURSE_UI: '1' },
-                });
+                /* 让工具知道输出要给界面看：状态行改成 [[status]] 单独一行；
+                 * Windows 的 .cmd 入口据此也不在结尾 pause（stdin 是管道，会一直等下去） */
+                const env = { ...process.env, COURSE_UI: '1' };
+                child = platform === 'win32'
+                    ? spawnProcess(...windowsCommand(resolve(dir, entry), args), { cwd: dir, env, windowsVerbatimArguments: true })
+                    : spawnProcess(entry, args, { cwd: dir, env });
             } finally {
                 run.pending = false;
             }

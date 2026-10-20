@@ -8,10 +8,13 @@ import { EventEmitter } from 'node:events';
 import { buildArgs, applyConfig, readConfig, missingRequired } from '../src/args.mjs';
 import { openCommand } from '../src/open.mjs';
 import { byId, entryFor, describe } from '../src/tools.mjs';
-import { createRunner } from '../src/runner.mjs';
+import { createRunner, windowsCommand } from '../src/runner.mjs';
 
 const xxt = byId('xuexitong');
 const zhs = byId('autovisor');
+/* 配置合并的测试要一个带必填文字项的 config 类工具。智慧树在控制台里已经不填
+ * 课程地址了（等你在浏览器里点开课程），这里把那一项加回来当样例 */
+const zhsUrl = { ...zhs, options: [{ key: ['course-url', 'URL1'], label: '课程地址', type: 'text', required: true }, ...zhs.options] };
 
 test('参数拼装：只传用户真正设过的选项', () => {
     assert.deepEqual(buildArgs(xxt, {}), [], '什么都没填就不该有参数');
@@ -49,9 +52,9 @@ test('参数拼装：数字框留空不要传空参数', () => {
 });
 
 test('必填项：缺了就报出来，报的是界面上的说法', () => {
-    assert.deepEqual(missingRequired(zhs, {}), ['课程地址']);
-    assert.deepEqual(missingRequired(zhs, { 'course-url.URL1': '  ' }), ['课程地址'], '只填空格也算没填');
-    assert.deepEqual(missingRequired(zhs, { 'course-url.URL1': 'https://x' }), []);
+    assert.deepEqual(missingRequired(zhsUrl, {}), ['课程地址']);
+    assert.deepEqual(missingRequired(zhsUrl, { 'course-url.URL1': '  ' }), ['课程地址'], '只填空格也算没填');
+    assert.deepEqual(missingRequired(zhsUrl, { 'course-url.URL1': 'https://x' }), []);
 });
 
 const INI = `[user-account]
@@ -70,7 +73,7 @@ URL2 =
 `;
 
 test('配置合并：改掉填了的项，注释和没动过的项原样保留', () => {
-    const out = applyConfig(INI, zhs, {
+    const out = applyConfig(INI, zhsUrl, {
         'course-url.URL1': 'https://studyvideoh5.zhihuishu.com/stuStudy?x=1',
         'course-option.limitSpeed': 'max',
     });
@@ -96,7 +99,7 @@ test('配置合并：留空的项保持原样，不会把存着的密码清掉',
 test('配置合并：键名不分大小写，GUI.py 存过的小写配置不会多出重复键', () => {
     /* configparser 写回时会把键全转小写；追加一行同名键它就读不了了 */
     const lower = `[script-option]\nenablehidewindow = False\n\n[course-url]\nurl1 = old\n`;
-    const out = applyConfig(lower, zhs, { 'script-option.enableHideWindow': true, 'course-url.URL1': 'https://new' });
+    const out = applyConfig(lower, zhsUrl, { 'script-option.enableHideWindow': true, 'course-url.URL1': 'https://new' });
     assert.match(out, /^enablehidewindow = True$/m);
     assert.match(out, /^url1 = https:\/\/new$/m);
     assert.equal(out.match(/hidewindow/gi).length, 1, '不该再追加一行');
@@ -105,7 +108,7 @@ test('配置合并：键名不分大小写，GUI.py 存过的小写配置不会�
 
 test('读配置：预填表单用，读出开关和文字，不读密码', () => {
     const saved = INI.replace('password =', 'password = secret').replace('URL1 =', 'URL1 = https://x').replace('soundOff = True', 'soundoff = false');
-    const current = readConfig(saved, zhs);
+    const current = readConfig(saved, zhsUrl);
     assert.equal(current['course-url.URL1'], 'https://x');
     assert.equal(current['course-option.limitSpeed'], '0');
     assert.equal(current['course-option.soundOff'], false, '小写键、小写 false 都要认');
@@ -124,7 +127,7 @@ test('只在 Windows 上有用的选项，别的平台上不显示', () => {
 
 test('配置合并：同名键只改对应段落里的那个', () => {
     const text = `[a]\nURL1 = old\n\n[course-url]\nURL1 = old\n`;
-    const out = applyConfig(text, zhs, { 'course-url.URL1': 'https://new' });
+    const out = applyConfig(text, zhsUrl, { 'course-url.URL1': 'https://new' });
     assert.match(out, /\[a\]\nURL1 = old/, '别的段落里的同名键不该被改');
     assert.match(out, /\[course-url\]\nURL1 = https:\/\/new/);
 });
@@ -274,17 +277,66 @@ test('跑进程：SIGINT 之后 8 秒还没退出就强制结束', async (t) => 
     assert.deepEqual(quietSent, ['SIGINT']);
 });
 
-test('跑进程：Windows 上按进程树结束，不然 node / python 会留在后台接着播', async () => {
+test('跑进程：Windows 上先关窗口、几秒后再强制结束整棵进程树', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
     const calls = [];
-    const child = Object.assign(fakeChild(), { pid: 4242 });
+    const child = Object.assign(fakeChild(), { pid: 4242, exitCode: null, signalCode: null });
+    const runner = createRunner({
+        root: '/tmp', platform: 'win32',
+        spawnProcess: (command, args, options) => { calls.push([command, args, options]); return calls.length === 1 ? child : fakeChild(); },
+    });
+    /* locate 要求入口脚本真的存在 */
+    const dir = await mkdtemp(join(tmpdir(), 'launcher-win-'));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    await writeFile(join(dir, 'start.cmd'), '@echo off\r\n', 'utf8');
+    await runner.start({ ...xxt, dir, entry: { posix: '.', win32: 'start.cmd' } }, { '--max-sections': '2' });
+
+    /* 启动：自己拼 cmd.exe 的命令行，不用 shell: true + 参数数组（DEP0190） */
+    const [command, args, options] = calls[0];
+    assert.equal(command, 'cmd.exe');
+    assert.deepEqual(args.slice(0, 3), ['/d', '/s', '/c']);
+    assert.match(args[3], /^""[^"]*start\.cmd" "--max-sections" "2""$/);
+    assert.equal(options.windowsVerbatimArguments, true);
+    assert.equal(options.shell, undefined);
+    assert.equal(options.env.COURSE_UI, '1', '.cmd 入口据此不在结尾 pause');
+
+    runner.stop('xuexitong');
+    /* 先不带 /F：给窗口发关闭消息，智慧树的 Edge 关掉后 Playwright 会自己清理临时 profile */
+    assert.deepEqual(calls[1].slice(0, 2), ['taskkill', ['/pid', '4242', '/T']]);
+    assert.equal(child.killed, false, '不该只结束 cmd.exe');
+    t.mock.timers.tick(5000);
+    assert.deepEqual(calls[2].slice(0, 2), ['taskkill', ['/pid', '4242', '/T', '/F']], '关不掉的（命令行进程）再强制结束');
+});
+
+test('跑进程：Windows 上已经自己退出了，就不再强制结束', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const calls = [];
+    const child = Object.assign(fakeChild(), { pid: 7, exitCode: null, signalCode: null });
     const runner = createRunner({
         root: '/tmp', platform: 'win32',
         spawnProcess: (command, args) => { calls.push([command, args]); return calls.length === 1 ? child : fakeChild(); },
     });
-    await runner.start({ ...xxt, dir: '/', entry: { posix: '.', win32: '.' } }, {});
+    const dir = await mkdtemp(join(tmpdir(), 'launcher-win-'));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    await writeFile(join(dir, 'start.cmd'), '@echo off\r\n', 'utf8');
+    await runner.start({ ...xxt, dir, entry: { posix: '.', win32: 'start.cmd' } }, {});
     runner.stop('xuexitong');
-    assert.deepEqual(calls[1], ['taskkill', ['/pid', '4242', '/T', '/F']]);
-    assert.equal(child.killed, false, '不该只结束 cmd.exe');
+    child.exitCode = 0;
+    t.mock.timers.tick(5000);
+    assert.equal(calls.length, 2);
+});
+
+test('Windows 命令行：带 cmd 特殊字符的参数一律拒绝', () => {
+    assert.throws(() => windowsCommand('C:\\a\\start.cmd', ['--x', 'a&calc']), /不能用的字符/);
+    assert.throws(() => windowsCommand('C:\\a\\start.cmd', ['%PATH%']), /不能用的字符/);
+    assert.deepEqual(windowsCommand('C:\\a b\\run.cmd', ['--config', 'config.ini', '--wait-course']),
+        ['cmd.exe', ['/d', '/s', '/c', '""C:\\a b\\run.cmd" "--config" "config.ini" "--wait-course""']]);
+});
+
+test('智慧树：控制台里不填课程地址，启动时固定带 --wait-course', () => {
+    assert.equal(zhs.options.some((option) => option.key?.[0] === 'course-url'), false);
+    assert.deepEqual(zhs.fixedArgs, ['--wait-course']);
+    assert.match(zhs.hint, /点开要刷的课程/);
 });
 
 test('跑进程：界面能看到这次用了什么设置，但看不到密码', async () => {
@@ -293,7 +345,7 @@ test('跑进程：界面能看到这次用了什么设置，但看不到密码',
         await writeFile(join(dir, 'config.linux.ini'), INI, 'utf8');
         await writeFile(join(dir, 'run.sh'), '#!/bin/sh\n', 'utf8');
         const runner = createRunner({ root: dir, platform: 'linux', spawnProcess: () => fakeChild() });
-        await runner.start({ ...zhs, dir: '.' }, { 'course-url.URL1': 'https://x', 'user-account.password': 'secret' });
+        await runner.start({ ...zhsUrl, dir: '.' }, { 'course-url.URL1': 'https://x', 'user-account.password': 'secret' });
         assert.equal(runner.toolState('autovisor').values['course-url.URL1'], 'https://x');
         assert.equal(JSON.stringify(runner.state()).includes('secret'), false);
     } finally {
@@ -304,7 +356,7 @@ test('跑进程：界面能看到这次用了什么设置，但看不到密码',
 test('跑进程：必填项没填就不启动', async () => {
     let spawned = false;
     const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => { spawned = true; return fakeChild(); } });
-    await assert.rejects(runner.start({ ...zhs, dir: '/', entry: { posix: '.', win32: '.' } }, {}), /课程地址/);
+    await assert.rejects(runner.start({ ...zhsUrl, dir: '/', entry: { posix: '.', win32: '.' } }, {}), /课程地址/);
     assert.equal(spawned, false);
 });
 
@@ -326,11 +378,11 @@ test('配置类工具：把值写进它自己的配置文件，并带上 --confi
             root: dir, platform: 'linux',
             spawnProcess: (command, args, options) => { call = { command, args, options }; return fakeChild(); },
         });
-        await runner.start({ ...zhs, dir: '.' }, {
+        await runner.start({ ...zhsUrl, dir: '.' }, {
             'course-url.URL1': 'https://studyvideoh5.zhihuishu.com/x',
             'course-option.limitSpeed': 'max',
         });
-        assert.deepEqual(call.args, ['--config', 'config.linux.ini']);
+        assert.deepEqual(call.args, ['--config', 'config.linux.ini', '--wait-course']);
         assert.equal(call.options.env.COURSE_UI, '1', '要让工具知道输出是给界面看的');
         const written = await readFile(join(dir, 'config.linux.ini'), 'utf8');
         assert.match(written, /^URL1 = https:\/\/studyvideoh5\.zhihuishu\.com\/x$/m);

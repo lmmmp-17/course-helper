@@ -121,10 +121,11 @@ export const TOOLS = [
         kind: 'config',
         /* 配置写进这个文件；按平台取不同的文件名，和它自己的入口脚本一致 */
         configFile: { win32: 'config.ini', linux: 'config.linux.ini', darwin: 'config.macos.ini' },
-        hint: '会自动打开一个浏览器。课程地址填课程播放页，就是能直接看到视频的那一页。',
+        hint: '会自动打开一个浏览器。在里面登录智慧树，点开要刷的课程（进到能看到视频的播放页），脚本就开始。',
+        /* 和另外两个平台一样：不填课程地址，等你在浏览器里点开课程。
+         * 配置文件里的 URL1… 是单独运行 run.cmd / run.sh 时用的，这里不用它 */
+        fixedArgs: ['--wait-course'],
         options: [
-            { key: ['course-url', 'URL1'], label: '课程地址', type: 'text', required: true,
-              placeholder: 'https://studyvideoh5.zhihuishu.com/stuStudy?...' },
             { key: ['course-option', 'limitSpeed'], label: '倍速', type: 'select',
               choices: [
                   { value: 'max', label: '最高' },
