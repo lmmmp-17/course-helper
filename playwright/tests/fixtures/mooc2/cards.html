@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  body { margin: 0; font-family: sans-serif; }
+  .ans-attach-ct { margin: 8px; border: 1px solid #ccc; }
+  .ans-job-icon { display: inline-block; width: 40px; height: 18px; background: #f90; }
+  .ans-job-finished .ans-job-icon { background: #3a3; }
+  iframe { border: 0; display: block; }
+</style></head>
+<body>
+<script>
+/* 每个小节的任务点, 结构照实测:
+ *   .ans-attach-ct.videoContainer[.ans-job-finished] > iframe /ananas/modules/video/
+ *   .ans-attach-ct[.ans-job-finished]                > iframe /ananas/modules/work/  */
+const SECTIONS = {
+  A: { video: { finished: true, at: 'end' }, work: { finished: false } },
+  B: { video: { finished: false, at: 'start' }, work: null },
+  C: { video: { finished: true, at: 'end' }, work: { finished: true } },
+  /* 视频不是任务点: 实测 .ans-attach-ct.videoContainer 里没有 .ans-job-icon */
+  D: { video: { finished: false, at: 'start', job: false }, work: null },
+  E: { video: { finished: false, at: 'start', job: false }, work: null },
+};
+const section = new URLSearchParams(location.search).get('section');
+const spec = SECTIONS[section];
+const add = (kind, job) => {
+  const ct = document.createElement('div');
+  ct.className = 'ans-attach-ct' + (kind === 'video' ? ' videoContainer' : '') + (job.finished ? ' ans-job-finished' : '');
+  if (job.job !== false) {
+    const icon = document.createElement('div');
+    icon.className = 'ans-job-icon' + (kind === 'video' ? ' ans-job-video' : '');
+    icon.setAttribute('aria-label', job.finished ? '任务点已完成' : '任务点未完成');
+    ct.appendChild(icon);
+  }
+  const frame = document.createElement('iframe');
+  frame.width = kind === 'video' ? 844 : 600;
+  frame.height = kind === 'video' ? 474 : 120;
+  frame.src = (kind === 'video' ? '/ananas/modules/video/index.html' : '/ananas/modules/work/index.html') + '?at=' + (job.at || '') + '&section=' + section;
+  ct.appendChild(frame);
+  document.body.appendChild(ct);
+};
+if (spec.video) add('video', spec.video);
+if (spec.work) add('work', spec.work);
+</script>
+</body></html>

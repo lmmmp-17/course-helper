@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>模拟课程页</title>
+<style>
+  body { margin: 0; font-family: sans-serif; display: flex; }
+  #coursetree { width: 260px; height: 100vh; overflow-y: auto; border-right: 1px solid #ddd; }
+  #coursetree ul { margin: 0; padding: 0; }
+  #coursetree li { list-style: none; }
+  .posCatalog_select { padding: 12px 10px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+  .posCatalog_select.firstLayer { font-weight: bold; background: #fafafa; cursor: default; }
+  .posCatalog_active { background: #e3f2fd; }
+  main { flex: 1; padding: 16px; }
+  .prev_white { display: inline-block; padding: 8px 14px; margin-right: 8px; border: 1px solid #bbb; cursor: pointer; }
+  .vjs-big-play-button { width: 90px; height: 50px; line-height: 50px; text-align: center;
+    border: 1px solid #333; cursor: pointer; margin-top: 8px; }
+  /* 让目录超出视口，这样切到后面的小节必须真的滚动 */
+  .spacer { height: 520px; }
+</style>
+</head>
+<body>
+<div id="coursetree">
+  <ul>
+    <li>
+      <div class="posCatalog_select firstLayer"><span class="posCatalog_name" title="第一章">第一章</span></div>
+      <div class="posCatalog_select posCatalog_active" data-key="1-1"><span class="posCatalog_name" title="1.1 直接有视频">1.1 直接有视频</span></div>
+      <div class="posCatalog_select" data-key="1-2"><span class="posCatalog_name" title="1.2 先学习目标">1.2 先学习目标</span></div>
+    </li>
+    <li>
+      <div class="posCatalog_select firstLayer"><span class="posCatalog_name" title="第二章">第二章</span></div>
+      <div class="posCatalog_select" data-key="2-1"><span class="posCatalog_name" title="2.1 先章节测验">2.1 先章节测验</span></div>
+      <div class="spacer"></div>
+    </li>
+  </ul>
+</div>
+<main>
+  <div class="prev_title" title="视频">视频</div>
+  <div id="steps"></div>
+  <div id="stage"></div>
+</main>
+<script>
+/* 这个桩页面只接受 isTrusted 的事件。任何合成事件都会被记进 rejected，
+ * 并且不会产生任何效果——所以测试一旦通过，就说明输入确实是浏览器自己造的。 */
+const probe = { key: '1-1', rejected: [], log: [], realPlayClicks: 0, scriptedPlays: 0, wheels: 0 };
+window.__probe = probe;
+
+function trusted(handler) {
+    return (event) => {
+        if (!event.isTrusted) {
+            probe.rejected.push(event.type);
+            return;
+        }
+        handler(event);
+    };
+}
+
+document.addEventListener('wheel', trusted(() => { probe.wheels += 1; }), { passive: true });
+
+document.getElementById('coursetree').addEventListener('click', trusted((event) => {
+    const item = event.target.closest('.posCatalog_select');
+    if (!item || item.classList.contains('firstLayer') || !item.dataset.key) return;
+    select(item.dataset.key);
+}));
+
+function setStep(title) {
+    const el = document.querySelector('.prev_title');
+    el.title = title;
+    el.textContent = title;
+}
+
+function select(key) {
+    document.querySelectorAll('.posCatalog_select').forEach((el) => el.classList.remove('posCatalog_active'));
+    document.querySelector(`[data-key="${key}"]`).classList.add('posCatalog_active');
+    probe.key = key;
+    probe.log.push('select:' + key);
+    render();
+}
+
+function render() {
+    document.getElementById('steps').textContent = '';
+    document.getElementById('stage').textContent = '';
+
+    if (probe.key === '1-1') {
+        setStep('视频');
+        mountVideo();
+        return;
+    }
+    if (probe.key === '1-2') {
+        setStep('学习目标');
+        const steps = document.getElementById('steps');
+        for (const label of ['1学习目标', '2视频']) {
+            const tab = document.createElement('span');
+            tab.className = 'prev_white';
+            tab.textContent = label;
+            tab.addEventListener('click', trusted(() => {
+                probe.log.push('tab:' + label);
+                if (label.includes('视频')) {
+                    setStep('视频');
+                    mountVideo();
+                }
+            }));
+            steps.appendChild(tab);
+        }
+        return;
+    }
+    if (probe.key === '2-1') {
+        setStep('章节测验');
+        const button = document.createElement('button');
+        button.id = 'prevNextFocusNext';
+        button.textContent = '下一步';
+        button.addEventListener('click', trusted(() => {
+            probe.log.push('test-next');
+            setStep('视频');
+            mountVideo();
+        }));
+        document.getElementById('stage').appendChild(button);
+    }
+}
+
+/* 视频放在嵌套 iframe 里，照着真实页面的结构来：外层 iframe 里再套一层 */
+function mountVideo() {
+    const frame = document.createElement('iframe');
+    frame.className = 'ans-insertvideo-online';
+    frame.width = 600;
+    frame.height = 320;
+    frame.srcdoc = PLAYER_HTML;
+    document.getElementById('stage').appendChild(frame);
+    probe.log.push('mount:' + probe.key);
+}
+
+const PLAYER_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+  body { margin: 0; font-family: sans-serif; }
+  #video_html5_api { width: 100%; height: 220px; background: #000; display: block; }
+  .vjs-big-play-button { width: 90px; height: 50px; line-height: 50px; text-align: center;
+    border: 1px solid #333; cursor: pointer; margin-top: 8px; }
+</style></head><body>
+<video id="video_html5_api"></video>
+<div class="vjs-big-play-button">播放</div>
+<script>
+  /* 用实例上的 own property 遮蔽原型 accessor，造一个“会走时间”的假播放器，
+   * 这样测试不需要真实媒体文件 */
+  const DURATION = 1.6;
+  const video = document.getElementById('video_html5_api');
+  let at = 0;
+  let paused = true;
+  const def = (name, get) => Object.defineProperty(video, name, { get, configurable: true });
+  def('currentTime', () => at);
+  def('duration', () => DURATION);
+  def('paused', () => paused);
+  def('ended', () => at >= DURATION);
+  def('readyState', () => 4);
+  video.play = () => {
+    parent.__probe.scriptedPlays += 1;
+    parent.__probe.log.push('scripted-play');
+    paused = false;
+    return Promise.resolve();
+  };
+  const button = document.querySelector('.vjs-big-play-button');
+  button.addEventListener('click', (event) => {
+    if (!event.isTrusted) {
+      parent.__probe.rejected.push('player-click');
+      return;
+    }
+    parent.__probe.realPlayClicks += 1;
+    parent.__probe.log.push('real-play-click');
+    paused = false;
+    button.style.display = 'none';
+  });
+  setInterval(() => {
+    if (!paused && at < DURATION) at = Math.min(DURATION, at + 0.08);
+  }, 40);
+<\/script></body></html>`;
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  body { margin: 0; }
+  /* 照实测的 video.js 7 结构: 起播后大按钮隐藏; 播完后控制栏按钮文字是"重播" */
+  #video { position: relative; width: 844px; height: 474px; background: #000; }
+  video { width: 100%; height: 100%; display: block; }
+  .vjs-big-play-button { position: absolute; left: 380px; top: 200px; width: 90px; height: 60px; cursor: pointer; }
+  #video.vjs-has-started .vjs-big-play-button { display: none; }
+  /* 照实测: 控制栏在起播前是 display:none, 指针移上去也不出来 */
+  .vjs-control-bar { display: none; position: absolute; left: 0; bottom: 0; width: 100%; height: 46px; background: #222; }
+  #video.vjs-has-started .vjs-control-bar { display: block; }
+  .vjs-play-control { position: absolute; left: 14px; top: 3px; width: 40px; height: 40px; cursor: pointer; }
+  /* 倍速菜单照实测的 video.js 结构: 平时收起, 点按钮才固定展开 */
+  .vjs-playback-rate { position: absolute; right: 14px; bottom: 3px; width: 56px; height: 40px; }
+  .vjs-playback-rate > button { width: 56px; height: 40px; cursor: pointer; }
+  .vjs-playback-rate .vjs-menu { display: none; position: absolute; bottom: 42px; right: 0; width: 80px; background: #333; }
+  .vjs-playback-rate.vjs-lock-showing .vjs-menu { display: block; }
+  .vjs-menu-content { list-style: none; margin: 0; padding: 0; }
+  .vjs-menu-item { height: 28px; line-height: 28px; color: #fff; cursor: pointer; }
+</style></head>
+<body>
+<div id="video" class="video-js vjs-default-skin vjs-big-play-centered">
+  <video id="video_html5_api" class="vjs-tech"></video>
+  <button class="vjs-big-play-button" type="button"><span class="vjs-control-text">播放视频</span></button>
+  <div class="vjs-control-bar">
+    <button class="vjs-play-control vjs-control vjs-button" type="button"><span class="vjs-control-text">播放</span></button>
+    <div class="vjs-playback-rate vjs-menu-button vjs-menu-button-popup vjs-control vjs-button">
+      <button class="vjs-playback-rate vjs-menu-button vjs-menu-button-popup vjs-button" type="button" title="播放速度"><span class="vjs-control-text">播放速度</span></button>
+      <div class="vjs-menu"><ul class="vjs-menu-content" role="menu">
+        <li class="vjs-menu-item" role="menuitemradio" data-rate="2"><span class="vjs-menu-item-text">2x</span></li>
+        <li class="vjs-menu-item" role="menuitemradio" data-rate="1.5"><span class="vjs-menu-item-text">1.5x</span></li>
+        <li class="vjs-menu-item" role="menuitemradio" data-rate="1.25"><span class="vjs-menu-item-text">1.25x</span></li>
+        <li class="vjs-menu-item vjs-selected" role="menuitemradio" data-rate="1"><span class="vjs-menu-item-text">1x</span><span class="vjs-control-text">, 选择</span></li>
+        <li class="vjs-menu-item" role="menuitemradio" data-rate="0.75"><span class="vjs-menu-item-text">0.75x</span></li>
+      </ul></div>
+    </div>
+  </div>
+</div>
+<script>
+const probe = top.__probe;
+const params = new URLSearchParams(location.search);
+const DURATION = 1.6;
+const root = document.getElementById('video');
+const video = document.getElementById('video_html5_api');
+let at = params.get('at') === 'end' ? DURATION : 0;
+let paused = true;
+if (at >= DURATION) { root.classList.add('vjs-has-started', 'vjs-ended'); }
+const label = () => document.querySelector('.vjs-play-control .vjs-control-text');
+const sync = () => {
+  label().textContent = at >= DURATION && paused ? '重播' : (paused ? '播放' : '暂停');
+};
+const def = (n, g) => Object.defineProperty(video, n, { get: g, configurable: true });
+def('currentTime', () => at); def('duration', () => DURATION); def('paused', () => paused);
+def('ended', () => at >= DURATION); def('readyState', () => 4);
+video.play = () => { probe.scriptedPlays += 1; probe.log.push('scripted-play'); paused = false; root.classList.add('vjs-has-started'); sync(); return Promise.resolve(); };
+const start = (via) => (e) => {
+  if (!e.isTrusted) { probe.rejected.push('player:' + via); return; }
+  if (at >= DURATION) { probe.replays += 1; probe.log.push('replay'); at = 0; }   // 点"重播"会从头再放
+  probe.realPlayClicks += 1; probe.log.push('play:' + via + ':' + params.get('section'));
+  paused = false; root.classList.add('vjs-has-started'); sync();
+};
+/* 静音必须发生在起播之前: 记下顺序, 测试里比较 */
+video.addEventListener('volumechange', () => { if (video.muted) probe.log.push('muted:' + params.get('section')); });
+/* 倍速菜单: 点按钮固定展开(vjs-lock-showing), 点档位才真正改倍速 */
+const rateBox = document.querySelector('.vjs-playback-rate');
+rateBox.querySelector('button').addEventListener('click', (e) => {
+  if (!e.isTrusted) { probe.rejected.push('rate:button'); return; }
+  rateBox.classList.toggle('vjs-lock-showing');
+  probe.log.push('rate-menu-open');
+});
+for (const item of rateBox.querySelectorAll('.vjs-menu-item')) {
+  item.addEventListener('click', (e) => {
+    if (!e.isTrusted) { probe.rejected.push('rate:item'); return; }
+    const value = Number(item.dataset.rate);
+    video.playbackRate = value;
+    rateBox.querySelectorAll('.vjs-menu-item').forEach((n) => n.classList.remove('vjs-selected'));
+    item.classList.add('vjs-selected');
+    rateBox.classList.remove('vjs-lock-showing');
+    probe.log.push('rate:' + value + ':' + params.get('section'));
+  });
+}
+document.querySelector('.vjs-big-play-button').addEventListener('click', start('big'));
+document.querySelector('.vjs-play-control').addEventListener('click', start('control'));
+setInterval(() => {
+  if (!paused && at < DURATION) { at = Math.min(DURATION, at + 0.08); if (at >= DURATION) { paused = true; probe.log.push('ended:' + params.get('section')); } sync(); }
+}, 40);
+sync();
+</script>
+</body></html>

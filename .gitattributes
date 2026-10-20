@@ -1,0 +1,6 @@
+# Windows 批处理必须是 CRLF，否则 cmd 会解析出错；shell 脚本必须是 LF
+*.cmd text eol=crlf
+*.sh text eol=lf
+# 生成的油猴脚本由 build.mjs 写出, 统一 LF; 否则 Windows 检出后 git status 永远是脏的
+*.js  text eol=lf
+*.mjs text eol=lf
