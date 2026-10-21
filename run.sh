@@ -136,9 +136,14 @@ if sys.platform == "darwin":
 else:
     wanted = lambda tag: "manylinux" in tag and tag.endswith(arch)
 
+# 镜像拒绝不带 User-Agent 的请求 (Windows 上实测 403), 显式带一个
+def fetch(url, timeout):
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 course-helper (uv installer)"})
+    return urllib.request.urlopen(request, timeout=timeout).read()
+
 for index in ("https://pypi.tuna.tsinghua.edu.cn/simple/uv/", "https://mirrors.aliyun.com/pypi/simple/uv/"):
     try:
-        page = urllib.request.urlopen(index, timeout=30).read().decode("utf-8", "replace")
+        page = fetch(index, 30).decode("utf-8", "replace")
         best = None
         for href in re.findall(r'href="([^"]+)"', page):
             m = re.search(r"/uv-(\d+)\.(\d+)\.(\d+)-py3-none-([^/#]+)\.whl#sha256=([0-9a-f]{64})$", href)
@@ -149,7 +154,7 @@ for index in ("https://pypi.tuna.tsinghua.edu.cn/simple/uv/", "https://mirrors.a
         if best is None:
             raise RuntimeError("no wheel for this machine")
         url = urllib.parse.urljoin(index, best[1].split("#")[0])
-        data = urllib.request.urlopen(url, timeout=600).read()
+        data = fetch(url, 600)
         if hashlib.sha256(data).hexdigest() != best[2]:
             raise RuntimeError("checksum mismatch")
         os.makedirs(bin_dir, exist_ok=True)

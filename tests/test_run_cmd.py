@@ -20,6 +20,11 @@ class RunCmdTest(unittest.TestCase):
         text = (ROOT / "resources" / "install-uv.ps1").read_bytes()
         self.assertTrue(text.isascii(), "install-uv.ps1 里不能有非 ASCII 字符")
 
+    def test_mirror_downloads_send_a_user_agent(self):
+        # 清华下载 wheel、阿里打开索引页, 不带 User-Agent 都是 403 (pc 在 Windows 上实测)
+        self.assertIn("User-Agent", (ROOT / "resources" / "install-uv.ps1").read_text(encoding="ascii"))
+        self.assertIn("User-Agent", (ROOT / "run.sh").read_text(encoding="utf-8"))
+
     def test_every_message_key_exists(self):
         cmd = (ROOT / "run.cmd").read_text(encoding="ascii")
         raw = (ROOT / "resources" / "run-messages.txt").read_bytes()
