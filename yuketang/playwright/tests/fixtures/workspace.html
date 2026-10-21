@@ -221,9 +221,10 @@ function mountPlayer(id) {
   });
   if (xt) {
     /* 照实测: 这套播放器有看门狗, 外部设的 muted 会在一两秒内被它改回去,
-     * 只有点它自己的音量按钮才作数。少了这一条, 桩就测不到回退那条路。 */
+     * 只有点它自己的音量按钮才作数。少了这一条, 桩就测不到回退那条路。
+     * 故意取 2 秒（实测「一两秒内」的上限）: 以前设完只等 1~1.6 秒看一眼, 会看在它动手之前 */
     video.addEventListener('volumechange', () => {
-      if (video.muted) setTimeout(() => { video.muted = false; probe.log.push('mute-reset:' + id); }, 500);
+      if (video.muted) setTimeout(() => { video.muted = false; probe.log.push('mute-reset:' + id); }, 2000);
     });
     box.querySelector('.xt_video_player_common_icon').addEventListener('click', trusted('volume', () => {
       video.volume = 0;
