@@ -415,7 +415,7 @@ def parse_args():
 def cli() -> int:
     global logger
     args = parse_args()
-    print_banner()
+    print_banner(plain=os.environ.get("COURSE_UI") == "1")
     logger = Logger()
     exit_code = 0
     # 从统一启动器启动时, 它关掉 stdin 就是让我们停(见 modules/stop_signal.py)
