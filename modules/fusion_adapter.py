@@ -10,10 +10,10 @@
 
 1. ``skip_ai_class_exercise`` — **AI 随堂练习弹窗**自动选选项并提交(官方没有)。
    - 视频播到 AI 时间点时, 智慧树会暂停视频并弹出 ``.ai-class-exercise-dialog``;
-     无关闭/跳过按钮, 但选任意选项并提交即可关闭。
-   - 关闭后视频处于暂停, 需恢复播放。
+     右上角的关闭图标在没作答时不让关("未作答的弹题不能关闭"), 选任意选项并提交即可关闭。
+   - 关闭后视频处于暂停, 由 ``tasks.play_video`` 点视频区域恢复; 弹窗开着时它把这里
+     当成遮挡, 不会在弹窗底下起播。
 2. ``expand_catalog`` — 融合目录的折叠小节展开 (官方 `get_filtered_class` 不展开)。
-3. ``resume_video`` -- 弹窗/异常后恢复视频播放的兜底。
 
 设计原则
 --------
@@ -104,28 +104,11 @@ class FusionAdapter:
             return 0
 
     @staticmethod
-    async def resume_video(page: Page) -> None:
-        """AI弹窗关闭后/任意暂停时, 恢复视频播放(静音兜底防自动暂停)。"""
-        try:
-            await page.evaluate(
-                """() => {
-                    const v = document.querySelector('video');
-                    if (v) { v.muted = true; v.play().catch(()=>{}); }
-                }"""
-            )
-        except TargetClosedError:
-            logger.debug("fusion:resume 浏览器已关闭.")
-        except Exception as exc:
-            logger.debug_throttled(
-                "fusion:resume",
-                f"恢复视频播放跳过: {logger.summarize_exception(exc)}",
-            )
-
-    @staticmethod
     async def skip_ai_exercise(page: Page) -> bool:
         """检测 AI 随堂弹窗并自动选选项+提交, 成功(或已处理)返回 True。
 
-        顺序: 选第一个选项 -> 点提交 -> 关闭后恢复播放。
+        顺序: 选第一个选项 -> 点提交。恢复播放交给 tasks.play_video: 以前这里在页面里
+        直接调 video.play(), 那是脚本调用, 不是点出来的。
         """
         if not await FusionAdapter.ai_exercise_visible(page):
             return False
@@ -139,7 +122,6 @@ class FusionAdapter:
             submitted = await _click_if_present(page, _SUBMIT_SELECTOR)
             await human.sleep_between(0.8, 1.6)
             logger.info("AI 随堂练习已自动提交关闭.")
-            await FusionAdapter.resume_video(page)
             return bool(clicked or submitted)
         except TargetClosedError:
             logger.debug("fusion:ai 浏览器已关闭.")

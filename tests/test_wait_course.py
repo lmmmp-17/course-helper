@@ -39,6 +39,14 @@ class CoursePageTests(unittest.TestCase):
         self.assertFalse(Autovisor.is_course_page("https://passport.zhihuishu.com/login"))
         self.assertFalse(Autovisor.is_course_page("https://studyvideoh5.zhihuishu.com.evil.example/x"))
 
+    def test_fusion_shared_course_only_counts_its_study_pages(self):
+        # 融合共享课: 播放页在 /study 下面, 同一站点的考试、知识图谱不算
+        self.assertTrue(Autovisor.is_course_page(
+            "https://wisdom-mooc.zhihuishu.com/study/index?recruitAndCourseId=4e5f5a5a475c4859454a585958435b425e"
+        ))
+        self.assertFalse(Autovisor.is_course_page("https://wisdom-mooc.zhihuishu.com/"))
+        self.assertFalse(Autovisor.is_course_page("https://wisdom-mooc.zhihuishu.com/exam"))
+
 
 class WaitForCourseTests(unittest.IsolatedAsyncioTestCase):
     async def test_course_opened_in_a_new_tab_is_taken_over_by_the_main_tab(self):

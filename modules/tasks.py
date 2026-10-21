@@ -21,6 +21,9 @@ VERIFICATION_SELECTORS = (
 BLOCKING_OVERLAY_SELECTORS = (
     ".topic-title",
     ".ss2077-custom-dialog",
+    # 融合共享课的 AI 随堂练习: 盖住播放器, 点视频区域起不了播, 以前会退回到
+    # 在弹窗底下用脚本 video.play() 硬播(真实页面上看到过)
+    ".ai-class-exercise-dialog",
 )
 
 
@@ -97,8 +100,43 @@ async def task_monitor(tasks: list[asyncio.Task]) -> None:
     logger.info("任务监控已退出.", shift=True)
 
 
+# 同一个视频、同一个倍速下, 倍速菜单最多试这么多次
+MAX_SPEED_TRIES = 3
+
+
+class SpeedGate:
+    """记下哪个 (视频地址, 倍速) 已经处理过, 不再反复去点倍速菜单。
+
+    倍速设成 max 时 "rate < limitSpeed" 永远成立: 没有这道闸, 已经在最高档了还会
+    每 2 秒去菜单里再点一次(Windows 上实测, 看起来就是在无限选倍速)。
+    菜单走不通(打不开、没有合适的档位)时, 同一个 (视频, 倍速) 试 MAX_SPEED_TRIES
+    次就不再碰, 免得指针一直在控制栏上晃。换了视频, 或者播放器把倍速改回去了,
+    key 跟着变, 会重新处理。
+    """
+
+    def __init__(self):
+        self.settled = None
+        self.failing = None
+        self.failures = 0
+
+    def wants(self, key) -> bool:
+        return key != self.settled
+
+    def succeeded(self, key) -> None:
+        self.settled = key
+        self.failing, self.failures = None, 0
+
+    def failed(self, key) -> None:
+        self.failures = self.failures + 1 if key == self.failing else 1
+        self.failing = key
+        if self.failures >= MAX_SPEED_TRIES:
+            logger.debug(f"倍速菜单连续 {self.failures} 次没走通, 这个视频先不调倍速")
+            self.succeeded(key)
+
+
 async def video_optimize(page: Page, config: Config) -> None:
     await page.wait_for_load_state("domcontentloaded")
+    speed_gate = SpeedGate()
     while True:
         try:
             await human.sleep(2.0)
@@ -146,9 +184,18 @@ async def video_optimize(page: Page, config: Config) -> None:
             # 只用菜单里有的档位, 不再退回写 playbackRate: 菜单里没有的值只能靠
             # 写属性加伪造标签文字, 页面一眼就能看出来, 而且那也不是平台允许的档位。
             if config.limitSpeed > 0 and rate is not None and rate < config.limitSpeed:
-                chosen = await player.raise_rate(page, config.limitSpeed)
-                if chosen is not None and chosen != rate:
-                    changes.append(f"倍速 {rate}->{chosen}(点菜单)")
+                src = await get_video_attr(page, "currentSrc")
+                if speed_gate.wants((src, rate)):
+                    logger.debug(f"倍速 {rate} 低于上限, 去菜单里调(视频 ...{str(src)[-40:]})")
+                    chosen = await player.raise_rate(page, config.limitSpeed)
+                    if chosen is None:
+                        speed_gate.failed((src, rate))
+                    else:
+                        if chosen != rate:
+                            changes.append(f"倍速 {rate}->{chosen}(点菜单)")
+                        # 记下切完之后 video 上真实的倍速: 下一轮读到的就是它
+                        after = await get_video_attr(page, "playbackRate")
+                        speed_gate.succeeded((src, chosen if after is None else after))
 
             if changes:
                 logger.event("播放器调节", 项目=", ".join(changes))

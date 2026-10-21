@@ -26,6 +26,10 @@ class LessonNavigationTests(unittest.TestCase):
             catalog_candidates("https://hike.zhihuishu.com/x"),
             (HIKE_CATALOG,),
         )
+        self.assertIs(
+            catalog_candidates("https://wisdom-mooc.zhihuishu.com/study/index?x=1")[0],
+            FUSION_CATALOG,
+        )
 
     def test_progress_parser_clamps_and_rejects_non_finite_values(self):
         cases = {
