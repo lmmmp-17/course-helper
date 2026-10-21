@@ -242,13 +242,13 @@ test('没有学习空间页面时一直等，用户点开视频后自动接管�
     await assert.rejects(pickCoursePage({ pages: () => [] }, { ...defaults }, silent, abort), /已退出/);
 });
 
-test('第一次运行自动安装依赖；装过就不再装；失败时给出镜像提示', () => {
+test('第一次运行自动安装依赖；装过就不再装；失败时说清楚', () => {
     const calls = [];
     const ok = (cmd, options) => { calls.push({ cmd, options }); return { status: 0 }; };
     assert.equal(ensureInstalled(silent, { dir: '/nonexistent-dir', run: ok }), true);
     assert.equal(calls[0].options.shell, true);
     assert.equal(ensureInstalled(silent, { run: ok }), false);
-    assert.throws(() => ensureInstalled(silent, { dir: '/nonexistent-dir', run: () => ({ status: 1 }) }), /npmmirror/);
+    assert.throws(() => ensureInstalled(silent, { dir: '/nonexistent-dir', run: () => ({ status: 1 }) }), /依赖安装失败/);
 });
 
 test('默认调试端口和学习通（9222）、智慧树连接模式（9224）错开，三个工具能同时跑', () => {
@@ -340,4 +340,29 @@ test('Windows 入口 start.cmd 只有 ASCII；用到的提示文字都在 start-
     const used = [...cmd.matchAll(/call :say ([\w-]+)/g)].map((match) => match[1]);
     assert.ok(used.length >= 5);
     for (const key of used) assert.ok(keys.has(key), `start-messages.txt 里缺 ${key}`);
+});
+
+test('装依赖默认走国内镜像，装不上再用官方源；用户自己配过源就只用它', async () => {
+    const { installDependencies, MIRROR, OFFICIAL } = await import('../src/setup.mjs');
+    const fake = (registry, installs) => {
+        const calls = [];
+        const run = (cmd) => {
+            calls.push(cmd);
+            if (cmd.startsWith('npm config get')) return { status: 0, stdout: `${registry}\n` };
+            return { status: installs.shift() ?? 1 };
+        };
+        return { run, calls };
+    };
+    let { run, calls } = fake('https://registry.npmjs.org/', [0]);
+    installDependencies(silent, { dir: '/x', run });
+    assert.equal(calls[1], `npm install --no-audit --no-fund --registry=${MIRROR}`);
+    assert.equal(calls.length, 2);
+
+    ({ run, calls } = fake('https://registry.npmjs.org', [1, 0]));
+    installDependencies(silent, { dir: '/x', run });
+    assert.equal(calls[2], `npm install --no-audit --no-fund --registry=${OFFICIAL}`, '镜像失败后换官方源');
+
+    ({ run, calls } = fake('https://npm.example.com/', [1]));
+    assert.throws(() => installDependencies(silent, { dir: '/x', run }), /配了自己的源/);
+    assert.deepEqual(calls.slice(1), ['npm install --no-audit --no-fund'], '用户的源不加 --registry，也不再换');
 });
