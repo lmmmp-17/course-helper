@@ -6,10 +6,12 @@ rem in the console's code page, and switching to UTF-8 halfway shifts the lines
 rem that follow (on a GBK console the Chinese comments below were run as
 rem commands). So when the console is not UTF-8 yet, switch it and run this
 rem file again in a fresh cmd, which then reads it from the top in UTF-8.
+rem
+rem The code page is left at UTF-8 afterwards. On current Windows every chcp
+rem clears the screen, so switching back wiped whatever the run had printed,
+rem error messages included. A double-clicked window closes right after anyway.
 rem ---------------------------------------------------------------------------
 if "%COURSE_CMD_SELF%"=="%~f0" goto :inner
-for /f "tokens=2 delims=:." %%c in ('chcp') do set "OLDCP=%%c"
-set "OLDCP=%OLDCP: =%"
 rem Pause at the end only when double-clicked, so an error doesn't vanish with
 rem the window. Never under the launcher (COURSE_UI=1): its stdin is a pipe
 rem that stays open, so pause would wait forever and the run would never end.
@@ -17,23 +19,19 @@ set "PAUSE_AT_END="
 if "%COURSE_UI%"=="1" goto :no_pause
 echo %cmdcmdline% | findstr /i /c:"%~nx0" >nul && set "PAUSE_AT_END=1"
 :no_pause
-if "%OLDCP%"=="65001" goto :here
+for /f "tokens=2 delims=:." %%c in ('chcp') do set "CP=%%c"
+set "CP=%CP: =%"
+if "%CP%"=="65001" goto :inner
 chcp 65001 >nul
 set "COURSE_CMD_SELF=%~f0"
 cmd /d /c ""%~f0" %*"
-set "CODE=%errorlevel%"
-chcp %OLDCP% >nul
-goto :done
-:here
-call :main %*
-set "CODE=%errorlevel%"
-:done
-if defined PAUSE_AT_END pause
-exit /b %CODE%
+exit /b %errorlevel%
 
 :inner
 call :main %*
-exit /b %errorlevel%
+set "CODE=%errorlevel%"
+if defined PAUSE_AT_END pause
+exit /b %CODE%
 
 :main
 rem Autovisor 的 Windows 源码运行入口：双击运行即可。
