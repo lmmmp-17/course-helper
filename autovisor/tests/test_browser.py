@@ -190,6 +190,23 @@ class BrowserSessionTests(unittest.IsolatedAsyncioTestCase):
         await session.close()
         self.assertTrue(browser.closed)
 
+    async def test_close_after_the_driver_quit_is_quiet(self):
+        # 真实控制台里 Ctrl+C 也发给了 Playwright 的驱动, 它先退出了 (pc 在 Windows 上实测)
+        class _GoneBrowser(_Browser):
+            async def close(self):
+                raise Exception("Browser.close: Connection closed while reading from the driver")
+
+        browser = _GoneBrowser()
+        await BrowserSession(browser, browser.contexts[0], _Page(), False).close()
+
+        class _BrokenBrowser(_Browser):
+            async def close(self):
+                raise RuntimeError("别的错")
+
+        broken = _BrokenBrowser()
+        with self.assertRaises(RuntimeError):
+            await BrowserSession(broken, broken.contexts[0], _Page(), False).close()
+
 
 class LaunchArgsTests(unittest.TestCase):
     def test_browser_starts_maximized(self):

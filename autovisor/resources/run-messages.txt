@@ -1,0 +1,8 @@
+# 给 run.cmd 用的提示文字（UTF-8，不带 BOM）。
+# run.cmd 本身只能写 ASCII，原因见它开头的说明。每行「键=文字」，文字里的 %变量% 会被展开。
+checking=[setup] 检查依赖（uv sync %EXTRA%）...
+no-uv=没找到 uv（用来准备 Python 环境和依赖）。
+ask-winget=现在用 winget 自动安装 uv 吗？
+manual-uv=请先安装 uv：https://docs.astral.sh/uv/getting-started/installation/ ，装完重新运行 run.cmd。
+sync-failed=[错误] 依赖安装失败。检查网络后重新运行 run.cmd 即可。
+press-any-key=按任意键关闭这个窗口...

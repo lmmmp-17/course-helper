@@ -5,6 +5,7 @@ data/*
 resources/*
 !data/mirrors.json
 !resources/zhs.ico
+!resources/run-messages.txt
 !resources/markdown/
 .obsidian/
 .idea/

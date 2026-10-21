@@ -18,7 +18,7 @@ from modules.course_runner import (
     detect_catalog_after_verification,
     run_course,
 )
-from modules.browser import create_browser_session
+from modules.browser import create_browser_session, driver_gone
 from modules.diagnostics import check_browser, check_course, check_player, check_quiz
 from modules.login import (
     LOGIN_PASSWORD_SELECTOR,
@@ -346,7 +346,7 @@ async def main(config, wait_course: bool = False) -> bool:
             except Exception as exc:
                 # 浏览器已经被关掉时存不了 Cookie 是必然的, 不是错误;
                 # 再报一行 [ERROR] 会和后面那句"正常结束"自相矛盾。
-                if "has been closed" in str(exc):
+                if "has been closed" in str(exc) or driver_gone(exc):
                     logger.debug(f"浏览器已关闭, 跳过刷新登录 Cookies: {exc}")
                 else:
                     logger.log_exception("刷新登录 Cookies 失败.", exc)
