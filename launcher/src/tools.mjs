@@ -125,6 +125,9 @@ export const TOOLS = [
         /* 和另外两个平台一样：不填课程地址，等你在浏览器里点开课程。
          * 配置文件里的 URL1… 是单独运行 run.cmd / run.sh 时用的，这里不用它 */
         fixedArgs: ['--wait-course'],
+        /* 入口脚本里 uv 的进度（Resolved / Checked / Installed …、装上的包 + foo==1.0）走 stderr，
+         * 不是警告，别标成橙色的「!」（pc 实测）。Autovisor 自己的警告、错误带 [WARN] / [ERROR]，照样认得出 */
+        plainStderr: /^\s*(?:(?:Resolved|Checked|Prepared|Installed|Uninstalled|Audited|Downloading|Downloaded|Built|Building|Updated|Using CPython|Creating virtual environment)\b|[+~-] [\w.-]+==)/,
         options: [
             { key: ['course-option', 'limitSpeed'], label: '倍速', type: 'select',
               choices: [

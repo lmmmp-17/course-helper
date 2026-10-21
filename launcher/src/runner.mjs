@@ -77,6 +77,8 @@ export function createRunner({ root, platform = process.platform, spawnProcess =
             emit({ type: 'status', tool, status: current.status });
             return;
         }
+        /* 有些工具的 stderr 里混着普通进度（比如 uv），登记表里写明了的不算警告 */
+        if (err && run.tool.plainStderr?.test(line)) err = false;
         const entry = { line, at: Date.now(), err };
         current.lines.push(entry);
         if (current.lines.length > MAX_LINES) current.lines.splice(0, current.lines.length - MAX_LINES);

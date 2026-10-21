@@ -465,3 +465,16 @@ test('Windows 入口：仓库里所有 .cmd 只有 ASCII；根目录 start.cmd �
     assert.ok(used.length >= 5);
     for (const key of used) assert.ok(keys.has(key), `start-messages.txt 里缺 ${key}`);
 });
+
+test('跑进程：智慧树入口里 uv 的进度走 stderr，但不算警告；别的 stderr 照样标出来', async () => {
+    const child = fakeChild();
+    const runner = createRunner({ root: '/tmp', platform: 'linux', spawnProcess: () => child });
+    const tool = { ...byId('autovisor'), dir: '/', entry: { posix: '.', win32: '.' }, kind: 'flags' };
+    await runner.start(tool, {});
+    child.stderr.emit('data', 'Resolved 23 packages in 5ms\nChecked 18 packages in 1ms\n + numpy==2.3.4\nTraceback (most recent call last):\n');
+    const err = Object.fromEntries(runner.toolState('autovisor').lines.map((e) => [e.line, e.err]));
+    assert.equal(err['Resolved 23 packages in 5ms'], false);
+    assert.equal(err['Checked 18 packages in 1ms'], false);
+    assert.equal(err[' + numpy==2.3.4'], false);
+    assert.equal(err['Traceback (most recent call last):'], true);
+});
