@@ -663,15 +663,16 @@ test('没有课程页时一直等，用户点开课程后自动接管；Ctrl+C �
     await assert.rejects(pickCoursePage({ pages: () => [] }, { ...defaults }, silent, abort), /已退出/);
 });
 
-test('第一次运行自动安装依赖；装过就不再装；--setup 强制重装；失败时给出镜像提示', () => {
+test('第一次运行自动安装依赖；装过就不再装；--setup 强制重装；失败时说清楚', () => {
     const calls = [];
     const ok = (cmd, options) => { calls.push({ cmd, options }); return { status: 0 }; };
     assert.equal(ensureInstalled(silent, { dir: '/nonexistent-dir', run: ok }), true);
-    assert.match(calls[0].cmd, /^npm install/);
-    assert.equal(calls[0].options.shell, true, 'Windows 上 npm 是 .cmd，要经过 shell 才能启动');
+    const install = calls.find((call) => call.cmd.startsWith('npm install'));
+    assert.ok(install, calls.map((call) => call.cmd).join(' / '));
+    assert.equal(install.options.shell, true, 'Windows 上 npm 是 .cmd，要经过 shell 才能启动');
     assert.equal(ensureInstalled(silent, { run: ok }), false, '本仓库已经装过，不应再装');
     assert.equal(ensureInstalled(silent, { force: true, run: ok }), true);
-    assert.throws(() => ensureInstalled(silent, { dir: '/nonexistent-dir', run: () => ({ status: 1 }) }), /npmmirror/);
+    assert.throws(() => ensureInstalled(silent, { dir: '/nonexistent-dir', run: () => ({ status: 1 }) }), /依赖安装失败/);
 });
 
 test('统一启动器关掉 stdin 就是让停：只触发一次，解除后不再触发', async () => {
@@ -759,4 +760,29 @@ test('Windows 入口 start.cmd 只有 ASCII；用到的提示文字都在 start-
     const used = [...cmd.matchAll(/call :say ([\w-]+)/g)].map((match) => match[1]);
     assert.ok(used.length >= 5);
     for (const key of used) assert.ok(keys.has(key), `start-messages.txt 里缺 ${key}`);
+});
+
+test('装依赖默认走国内镜像，装不上再用官方源；用户自己配过源就只用它', async () => {
+    const { installDependencies, MIRROR, OFFICIAL } = await import('../src/setup.mjs');
+    const fake = (registry, installs) => {
+        const calls = [];
+        const run = (cmd) => {
+            calls.push(cmd);
+            if (cmd.startsWith('npm config get')) return { status: 0, stdout: `${registry}\n` };
+            return { status: installs.shift() ?? 1 };
+        };
+        return { run, calls };
+    };
+    let { run, calls } = fake('https://registry.npmjs.org/', [0]);
+    installDependencies(silent, { dir: '/x', run });
+    assert.equal(calls[1], `npm install --no-audit --no-fund --registry=${MIRROR}`);
+    assert.equal(calls.length, 2);
+
+    ({ run, calls } = fake('https://registry.npmjs.org', [1, 0]));
+    installDependencies(silent, { dir: '/x', run });
+    assert.equal(calls[2], `npm install --no-audit --no-fund --registry=${OFFICIAL}`, '镜像失败后换官方源');
+
+    ({ run, calls } = fake('https://npm.example.com/', [1]));
+    assert.throws(() => installDependencies(silent, { dir: '/x', run }), /配了自己的源/);
+    assert.deepEqual(calls.slice(1), ['npm install --no-audit --no-fund'], '用户的源不加 --registry，也不再换');
 });
