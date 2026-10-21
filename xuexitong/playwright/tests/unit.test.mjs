@@ -709,3 +709,9 @@ test('统一启动器关掉 stdin：真实子进程里也能收到', async () =>
     assert.equal(code, 0);
     assert.match(out, /收到停止/);
 });
+
+test('从启动器跑（COURSE_UI=1）时，日志里不教人按 Ctrl+C：停止靠界面上的按钮', async () => {
+    const { keyHint } = await import('../src/stop-signal.mjs');
+    assert.equal(keyHint('，按 Ctrl+C 退出', { COURSE_UI: '1' }), '');
+    assert.equal(keyHint('，按 Ctrl+C 退出', {}), '，按 Ctrl+C 退出');
+});
