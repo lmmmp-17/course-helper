@@ -26,6 +26,20 @@ class BrowserSession:
             await self.browser.close()
         except TargetClosedError:
             return
+        except Exception as exc:
+            if driver_gone(exc):
+                return
+            raise
+
+
+def driver_gone(exc: BaseException) -> bool:
+    """Playwright 的 node 驱动已经退出了.
+
+    在真实控制台里按 Ctrl+C, 这个信号同时发给了驱动, 它先走了; 之后再关浏览器、存 Cookie
+    都只会报 "Connection closed while reading from the driver"(pc 在 Windows 上实测).
+    驱动一走它起的浏览器也跟着结束, 没有要收的东西了, 不该当成未处理异常.
+    """
+    return "Connection closed while reading from the driver" in str(exc)
 
 
 def get_effective_driver(config_driver: str) -> str:
