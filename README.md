@@ -39,7 +39,8 @@ fork 上游作者的工作依然给了我很大启发，在此一并感谢🙏�
 - **Node.js 20 或更新**：
   - Windows：没装也没关系，第一次运行 `start.cmd` 时会问你要不要用 winget 自动装。
   - macOS：`brew install node`；Linux：用系统的包管理器装 `nodejs`。也可以到 [nodejs.org](https://nodejs.org/) 下载 LTS 版。
-- **智慧树不用自己装 Python**：第一次跑它时会自动准备好。Windows 上要先有 uv，没有的话，在网课助手里点开始就会直接用 winget 装（要等一两分钟）；单独双击 `autovisor\run.cmd` 时会先问你。
+- **智慧树不用自己装 Python**：第一次跑它时会自动准备好。Windows 上还要一个叫 uv 的小工具，没有的话，在网课助手里点开始会自动装上（要等一两分钟）；单独双击 `autovisor\run.cmd` 时会先问你。
+- **不用开代理**：第一次运行要下载的依赖，默认都从国内镜像下载（npmmirror、清华 PyPI）。镜像不行时会自动改用官方源再试一次。
 - **下载**：
   - Windows：到 [GitHub Releases](https://github.com/lmmmp-17/course-helper/releases) 或 [Gitee 发行版](https://gitee.com/lmmmp-17/course-helper/releases) 下载最新的 **`course-helper-windows.zip`**，解压。三个工具和窗口版程序都在里面。
     解压出来有好几个文件夹，**只需要双击 `网课助手.exe`**（一般在最下面），学习通、长江雨课堂、智慧树都在它里面选。别的文件夹是它要用的程序，不用点开，也别删。压缩包里的 `使用说明.txt` 写的也是这些。
@@ -112,7 +113,7 @@ fork 上游作者的工作依然给了我很大启发，在此一并感谢🙏�
 | 窗口版提示缺少 WebView2 运行时 | 点「是」去下载安装（Windows 11 自带，少数 Windows 10 没有）；或者点「否」先用终端版 |
 | 窗口版提示「终端版的网课助手正在运行」 | 两个不能同时开，先在终端版里按 Q 退出 |
 | `没找到 Node.js` | 按提示装 Node.js 20 或更新，装完重新运行 |
-| `依赖安装失败` | 检查网络后重新开始。国内网络慢的话，先执行 `npm config set registry https://registry.npmmirror.com` |
+| `依赖安装失败` | 国内镜像和官方源都试过了还是没装上，检查网络后重新开始。npm 里配过自己的源的话，只会用那个源 |
 | `调试端口一直没打开` | 这个平台的专用浏览器之前被打开过、还没关。关掉它的所有窗口再开始 |
 | `…上开着的是 Chrome，不是你选的 Edge` | 之前用另一种浏览器跑过，那个专用窗口还开着。关掉它再开始 |
 | 智慧树点开课程后一直没开始 | 要进到能直接看到视频的**播放页**，课程首页、课程列表不算 |
@@ -235,6 +236,19 @@ Fedora 上 git 不带 subtree，要先 `sudo dnf install git-subtree`；Windows 
 复测 v0.1.0-rc.5：各个入口（双击、在已开的命令行里运行、窗口版启动）都不再出现半截中文，中文提示正常，Ctrl+C 只问一遍，智慧树按 Ctrl+C 正常收尾，回归项全部通过。顺手改掉两处观感问题：窗口版的记录里，uv 的进度（走 stderr）不再标成警告；Autovisor 的方块字符画在比例字体下会散掉，在控制台里改成一行字。
 
 另外，自己跑测试时，一个偶发失败带出了一个更要紧的问题：雨课堂的一套播放器（xtplayer）会在一两秒内把外部设的静音改回去，而脚本设完静音只等 1～1.6 秒就检查，可能检查在它改回去之前，然后带着声音起播。脚本自己开的浏览器带 `--mute-audio`，声音被兜住了；连到你自己开的浏览器时会外放。现在要连续 2.5 秒保持静音才起播，详见 [yuketang/README.md](yuketang/README.md)。
+
+### 第一次运行下载什么，从哪儿下
+
+用这个工具的人大多在国内，GitHub、npm、PyPI 的官方源从很多网络上很慢或者连不上（有人第一次用，就卡在用 winget 从 GitHub 装 uv 那一步）。所以第一次运行默认走国内镜像，镜像不行再退回官方源。用户自己配过源的，以用户的为准。
+
+| 要下载的 | 谁要 | 默认从哪儿下 | 退回 |
+| --- | --- | --- | --- |
+| playwright-core | 学习通、雨课堂 | npmmirror（`npm install --registry`；`package-lock.json` 不变，实测） | npm 官方源 |
+| uv | 智慧树（Windows） | 清华 / 阿里 PyPI 镜像：uv 的 wheel 里带着 uv.exe | winget（从 GitHub 下载） |
+| Python、依赖包 | 智慧树（Windows） | npmmirror、清华 PyPI（版本照 `uv.lock`，实测不变） | 官方源 |
+
+- Linux / macOS 上智慧树反过来，先走官方源、失败再走镜像，原因是 git 工作区里的 `uv.lock` 不该被改写。细节见 [autovisor/README.md](autovisor/README.md)。
+- Node.js 本身不在这里：窗口版、终端版都要先装好它。winget 装 Node 时从 nodejs.org 下载，国内直连能不能下下来还没实测。
 
 ### 控制台
 

@@ -483,7 +483,7 @@ function parseLine(entry) {
 }
 
 /* 第一次装依赖：工具没有单独报这个阶段，按它们打的日志认 */
-const PREPARING = /正在安装依赖|首次\/变更环境部署|强制环境部署|安装 Python 依赖|未检测到 uv|正在用 winget 安装 uv/;
+const PREPARING = /正在安装依赖|首次\/变更环境部署|强制环境部署|安装 Python 依赖|未检测到 uv|正在安装 uv/;
 const PREPARED = /启动专用|连接 (Chrome|Edge)|程序启动中|正在启动 .*浏览器|环境已就绪/;
 const phaseAfter = (phase, text) => (PREPARING.test(text) ? 'prepare' : PREPARED.test(text) ? '' : phase);
 

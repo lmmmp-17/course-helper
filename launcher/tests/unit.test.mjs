@@ -480,7 +480,7 @@ test('跑进程：智慧树入口里 uv 的进度走 stderr，但不算警告；
     assert.equal(err['Traceback (most recent call last):'], true);
 });
 
-test('第一次装依赖的提醒：智慧树在网课助手里自动装 uv 时也算', () => {
-    assert.equal(phaseAfter('', '正在用 winget 安装 uv，第一次要等一两分钟...'), 'prepare');
+test('第一次装依赖的提醒：智慧树自动装 uv 时也算', () => {
+    assert.equal(phaseAfter('', '正在安装 uv（从清华的 PyPI 镜像下载），第一次要等一两分钟...'), 'prepare');
     assert.equal(phaseAfter('prepare', '程序启动中...'), '');
 });
