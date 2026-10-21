@@ -4,8 +4,10 @@ rem ---------------------------------------------------------------------------
 rem Everything above :main must stay ASCII. cmd reads a batch file line by line
 rem in the console's code page, and switching to UTF-8 halfway shifts the lines
 rem that follow (on a GBK console the Chinese comments below were run as
-rem commands). So when the console is not UTF-8 yet, switch it and run this
-rem file again in a fresh cmd, which then reads it from the top in UTF-8.
+rem commands). So when the console is not UTF-8 yet, switch it and read this
+rem file again from the top with "call", which then reads it all in UTF-8.
+rem "call" keeps it in the same cmd: running it in a second cmd made Ctrl+C
+rem ask "Terminate batch job (Y/N)?" twice, once for each cmd.
 rem
 rem The code page is left at UTF-8 afterwards. On current Windows every chcp
 rem clears the screen, so switching back wiped whatever the run had printed,
@@ -24,13 +26,13 @@ set "CP=%CP: =%"
 if "%CP%"=="65001" goto :inner
 chcp 65001 >nul
 set "COURSE_CMD_SELF=%~f0"
-cmd /d /c ""%~f0" %*"
+call "%~f0" %*
 exit /b %errorlevel%
 
 :inner
 call :main %*
 set "CODE=%errorlevel%"
-if defined PAUSE_AT_END pause
+if defined PAUSE_AT_END call :wait_close
 exit /b %CODE%
 
 :main
@@ -84,3 +86,11 @@ goto :fail
 set "CODE=1"
 :end
 exit /b %CODE%
+
+rem 双击运行时停在这里，不然报错和结束总结会跟着窗口一起消失。
+rem 不用 pause 自带的那句：代码页是 65001 时它是英文。
+:wait_close
+echo.
+echo 按任意键关闭这个窗口...
+pause >nul
+exit /b 0
