@@ -1,0 +1,7 @@
+# 给 start.cmd 用的提示文字（UTF-8，不带 BOM）。
+# start.cmd 本身只能写 ASCII，原因见它开头的说明。每行「键=文字」，文字里的 %变量% 会被展开。
+no-node=没找到 Node.js（需要 20 或更新）。
+ask-winget=现在用 winget 自动安装 Node.js LTS 吗？
+manual-node=请到 https://nodejs.org 下载 LTS 版安装，装完重新运行 start.cmd。
+old-node=[错误] Node.js 版本太旧（当前 %NODE_MAJOR%，需要 20 或更新），请到 https://nodejs.org 下载 LTS 版重新安装。
+press-any-key=按任意键关闭这个窗口...
