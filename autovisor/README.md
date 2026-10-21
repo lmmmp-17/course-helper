@@ -16,7 +16,7 @@ fork 自 [CXRunfree/Autovisor](https://github.com/CXRunfree/Autovisor)，这个�
 
 - **浏览器**：Windows 默认用 Edge，Linux / macOS 默认用 Google Chrome。
 - **下载这个仓库**：在 GitHub 页面点 **Code → Download ZIP** 解压；或者 `git clone https://github.com/lmmmp-17/Autovisor.git`。
-- **不需要自己装 Python**。入口脚本会用 [uv](https://docs.astral.sh/uv/) 准备好 Python 3.13 和全部依赖；没有 uv 的话：Linux / macOS 会自动装，Windows 会问你要不要用 winget 装。
+- **不需要自己装 Python**。入口脚本会用 [uv](https://docs.astral.sh/uv/) 准备好 Python 3.13 和全部依赖；没有 uv 的话：Linux / macOS 会自动装；Windows 上双击 run.cmd 会问你要不要用 winget 装，从网课助手启动时直接装（那里没法回答问题）。
 
 ### 2. 运行
 
