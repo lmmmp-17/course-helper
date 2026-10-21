@@ -91,7 +91,7 @@ def has_class(class_attr: str | None, class_name: str) -> bool:
 def catalog_candidates(course_url: str) -> tuple[CatalogSelectors, ...]:
     if "hike.zhihuishu.com" in course_url:
         return (HIKE_CATALOG,)
-    if "fusioncourseh5" in course_url:
+    if "fusioncourseh5" in course_url or "wisdom-mooc.zhihuishu.com" in course_url:
         return (FUSION_CATALOG, WISDOM_CATALOG, LEGACY_CATALOG)
     return (WISDOM_CATALOG, LEGACY_CATALOG, FUSION_CATALOG)
 

@@ -114,6 +114,7 @@ async def raise_rate(page: Page, cap: float) -> float | None:
     """用播放器的倍速菜单切到不超过 cap 的最高一档, 返回实际切到的档位。
 
     只用菜单里列出来的档位: 那才是平台允许的, 倍速标签也由播放器自己更新。
+    已经在这一档就不点, 直接返回它。
     菜单打不开或者没有合适的档位就返回 None, 保持原速——不去写 playbackRate,
     那等于绕过平台自己的控件, 而且页面一眼就能看出来。
     """
@@ -138,6 +139,8 @@ async def raise_rate(page: Page, cap: float) -> float | None:
                 f"倍速菜单里没有不超过 {cap} 的档位, 可选: {[l for l in labels if l]}",
             )
             return None
+        if await current_rate_label(page) == target:
+            return target
 
         await _move_onto(page, f"{SPEED_TAB} >> nth={labels.index(target)}")
         await _click_here(page)

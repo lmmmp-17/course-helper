@@ -61,21 +61,29 @@ ZHS_COOKIE_URLS = [
     "https://studyvideoh5.zhihuishu.com",
     "https://studywisdomh5.zhihuishu.com",
     "https://fusioncourseh5.zhihuishu.com",
+    "https://wisdom-mooc.zhihuishu.com",
     "https://hike.zhihuishu.com",
 ]
 
 
-# 课程播放页所在的几个站点: 新版(智慧)共享课、旧版、融合课、翻转课
+# 课程播放页所在的几个站点: 新版(智慧)共享课、旧版、融合课、融合共享课、翻转课
 COURSE_HOSTS = {
     "studyvideoh5.zhihuishu.com",
     "studywisdomh5.zhihuishu.com",
     "fusioncourseh5.zhihuishu.com",
+    "wisdom-mooc.zhihuishu.com",
     "hike.zhihuishu.com",
 }
 
 
+# 融合共享课站点上还有考试、知识图谱这些页面, 只有 /study 下面是播放页
+COURSE_PATH_PREFIX = {"wisdom-mooc.zhihuishu.com": "/study"}
+
+
 def is_course_page(url: str) -> bool:
-    return (urlparse(url).hostname or "") in COURSE_HOSTS
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    return host in COURSE_HOSTS and parsed.path.startswith(COURSE_PATH_PREFIX.get(host, ""))
 
 
 async def wait_for_course_page(context: BrowserContext, page: Page, poll_seconds: float = 1.5) -> str:

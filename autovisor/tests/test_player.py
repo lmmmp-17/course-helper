@@ -7,6 +7,7 @@ PlayerControlsE2E 里, 需要本机浏览器, 用 AUTOVISOR_E2E=1 打开。
 悬停才出现、只接受 isTrusted 事件, 并且把"写 video 属性"记成一条日志——所以
 一旦退回旧做法, 测试看得见。
 """
+import asyncio
 import os
 import threading
 import unittest
@@ -239,6 +240,21 @@ class PlayerControlsE2E(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.video_state())["rate"], 1.5)
         self.assertEqual(await player.current_rate_label(self.page), 1.5)
 
+    async def test_optimize_loop_picks_the_speed_once(self):
+        # 倍速设成 max 时 "倍速 < 上限" 永远成立: 以前已经在最高档了, 每一轮(约 2 秒)
+        # 还会去菜单里再点一次, 看起来就是在无限选倍速
+        from modules import tasks
+
+        class _Settings:
+            soundOff = False
+            limitSpeed = float("inf")
+
+        loop = asyncio.create_task(tasks.video_optimize(self.page, _Settings()))
+        await asyncio.sleep(14)
+        loop.cancel()
+        clicks = [e for e in (await self.probe())["log"] if e.startswith("click-rate")]
+        self.assertEqual(clicks, ["click-rate:1.5"])
+
     async def test_mute_is_set_by_clicking_the_volume_button(self):
         self.assertTrue(await player.mute_by_button(self.page))
         self.assertTrue((await self.video_state())["muted"])
@@ -285,3 +301,38 @@ class PickRateTests(unittest.TestCase):
     def test_nothing_usable_returns_none(self):
         self.assertIsNone(player.pick_rate(self.MENU, 0.5))
         self.assertIsNone(player.pick_rate([None, None], float("inf")))
+
+
+class SpeedGateTests(unittest.TestCase):
+    """同一个视频、同一个倍速只处理一次; 换视频或倍速被改回去再处理。"""
+
+    def test_settled_key_is_not_wanted_again(self):
+        from modules.tasks import SpeedGate
+
+        gate = SpeedGate()
+        self.assertTrue(gate.wants(("a.mp4", 1.0)))
+        gate.succeeded(("a.mp4", 1.5))
+        self.assertFalse(gate.wants(("a.mp4", 1.5)))
+        # 播放器把倍速改回去了, 或者换了下一个视频
+        self.assertTrue(gate.wants(("a.mp4", 1.0)))
+        self.assertTrue(gate.wants(("b.mp4", 1.5)))
+
+    def test_gives_up_after_repeated_failures(self):
+        from modules.tasks import MAX_SPEED_TRIES, SpeedGate
+
+        gate = SpeedGate()
+        for _ in range(MAX_SPEED_TRIES - 1):
+            gate.failed(("a.mp4", 1.0))
+            self.assertTrue(gate.wants(("a.mp4", 1.0)))
+        gate.failed(("a.mp4", 1.0))
+        self.assertFalse(gate.wants(("a.mp4", 1.0)), "菜单走不通时不该一直去点")
+        self.assertTrue(gate.wants(("b.mp4", 1.0)), "换了视频要重新试")
+
+    def test_failures_on_another_video_start_over(self):
+        from modules.tasks import MAX_SPEED_TRIES, SpeedGate
+
+        gate = SpeedGate()
+        for _ in range(MAX_SPEED_TRIES - 1):
+            gate.failed(("a.mp4", 1.0))
+        gate.failed(("b.mp4", 1.0))
+        self.assertTrue(gate.wants(("b.mp4", 1.0)))
