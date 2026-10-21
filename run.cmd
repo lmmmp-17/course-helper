@@ -46,7 +46,10 @@ set "CONFIG=config.ini"
 rem 1. Config file: create it from the template when missing, then go on
 if not exist "%CONFIG%" copy /y config.ini.example "%CONFIG%" >nul
 
-rem 2. uv prepares Python and the dependencies (no Python install needed)
+rem 2. uv prepares Python and the dependencies (no Python install needed).
+rem    Also look where winget and uv's own installer put it: a uv installed
+rem    after this process started is not on the PATH it inherited.
+set "PATH=%LOCALAPPDATA%\Microsoft\WinGet\Links;%USERPROFILE%\.local\bin;%PATH%"
 where uv >nul 2>nul
 if errorlevel 1 call :install_uv
 where uv >nul 2>nul
@@ -69,12 +72,25 @@ goto :end
 call :say no-uv
 where winget >nul 2>nul
 if errorlevel 1 goto :manual_uv
+rem Under the launcher nobody can answer a question: stdin is its pipe, and
+rem neither the window nor the terminal version can type into it, so a run sat
+rem at this question for good (seen on a friend's first run). Starting
+rem Zhihuishu there is the go-ahead; a double-clicked run.cmd still asks.
+if "%COURSE_UI%"=="1" goto :winget_uv
 call :say ask-winget
 choice /c YN
 if errorlevel 2 goto :manual_uv
-winget install --id astral-sh.uv -e --accept-source-agreements --accept-package-agreements
-set "PATH=%LOCALAPPDATA%\Microsoft\WinGet\Links;%USERPROFILE%\.local\bin;%PATH%"
-exit /b 0
+:winget_uv
+call :say installing-uv
+rem In the launcher's log winget's progress bars come out as garbage: keep its
+rem output in a file there, and say where it is if the install fails.
+set "WINGET_LOG=CON"
+if "%COURSE_UI%"=="1" set "WINGET_LOG=%TEMP%\autovisor-winget.log"
+winget install --id astral-sh.uv -e --accept-source-agreements --accept-package-agreements >"%WINGET_LOG%" 2>&1
+where uv >nul 2>nul
+if not errorlevel 1 exit /b 0
+call :say winget-failed
+if not "%WINGET_LOG%"=="CON" call :say winget-log
 :manual_uv
 call :say manual-uv
 exit /b 1
