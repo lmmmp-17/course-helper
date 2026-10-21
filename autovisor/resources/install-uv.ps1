@@ -40,11 +40,21 @@ $bin = [IO.Path]::Combine($env:USERPROFILE, '.local', 'bin')
 # Every file of every release is listed; only wheels with a checksum count
 $pattern = 'href="([^"]*?/uv-(\d+)\.(\d+)\.(\d+)-py3-none-' + $platform + '\.whl)#sha256=([0-9a-f]{64})"'
 
+# The mirrors answer 403 to requests without a User-Agent: Tsinghua for the
+# wheel, Aliyun already for the index (pc on Windows). Invoke-WebRequest sent
+# one by itself, WebClient doesn't. A fresh client per request, so the header
+# is surely there.
+$agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) WindowsPowerShell/5.1 course-helper'
+function New-WebClient {
+    $client = [Net.WebClient]::new()
+    $client.Headers['User-Agent'] = $agent
+    return $client
+}
+
 foreach ($index in $list) {
     $tmp = $null
     try {
-        $web = [Net.WebClient]::new()
-        $page = $web.DownloadString($index)
+        $page = (New-WebClient).DownloadString($index)
         $best = $null
         foreach ($m in [regex]::Matches($page, $pattern)) {
             $version = [version]('{0}.{1}.{2}' -f $m.Groups[2].Value, $m.Groups[3].Value, $m.Groups[4].Value)
@@ -57,7 +67,7 @@ foreach ($index in $list) {
         $tmp = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'uv-wheel-' + [guid]::NewGuid())
         [void][IO.Directory]::CreateDirectory($tmp)
         $wheel = [IO.Path]::Combine($tmp, 'uv.whl')
-        $web.DownloadFile([Uri]::new([Uri]$index, $best.Href), $wheel)
+        (New-WebClient).DownloadFile([Uri]::new([Uri]$index, $best.Href), $wheel)
 
         $stream = [IO.File]::OpenRead($wheel)
         try {
