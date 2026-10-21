@@ -14,6 +14,9 @@ dist
 dist-ssr
 *.local
 package-lock.json
+# Playwright 版的依赖要锁住版本（和雨课堂一样提交进来）：不然第一次安装时现生成一份，
+# 装到的 playwright-core 版本没人测过
+!playwright/package-lock.json
 pnpm-lock.yaml
 
 # Editor directories and files
