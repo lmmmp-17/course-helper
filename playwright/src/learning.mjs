@@ -13,6 +13,9 @@ import { human, sleep, sleepFor } from './human.mjs';
 import { bar, clip, formatDuration, formatTime } from './display.mjs';
 import { keyHint } from './stop-signal.mjs';
 
+/* 静音设上以后盯多久才算保持住了：xtplayer 的看门狗实测一两秒内动手 */
+const MUTE_WATCH_MS = 2500;
+
 /* 目录按页面顺序读成一串条目：学习项，以及折叠着的知识点节点。
  *
  * 实测折叠节点下的学习项根本不渲染（一门课 111 项里有 24 个视频藏在折叠节点下），
@@ -392,8 +395,7 @@ export class LearningRunner {
         await this.page.locator(SEL.video).first()
             .evaluate((el) => { el.muted = true; }, undefined, { timeout: 3000 })
             .catch(() => {});
-        await sleepFor([900, 1600]);
-        if ((await this.videoState() || {}).silent) {
+        if (await this.staysSilent(MUTE_WATCH_MS)) {
             this.log.note('已静音');
             return;
         }
@@ -406,11 +408,22 @@ export class LearningRunner {
         } catch (e) {
             this.log.trace(`点音量按钮没成功: ${e.message.split('\n')[0]}`);
         }
-        const after = await this.videoState();
-        if (after && after.silent) {
+        if (await this.staysSilent(MUTE_WATCH_MS)) {
             this.log.note('已静音（点的播放器音量键）');
         } else {
             this.log.warn('没能让播放器静音，声音可能会外放。启动 Chrome 时加 --mute-audio 可以兜底。');
+        }
+    }
+
+    /* 静音要保持住一阵子才算数。xtplayer 的看门狗是「一两秒内」才把 muted 改回去，
+     * 以前设完等 1~1.6 秒看一眼，可能看在它动手之前，接着就带着声音起播了
+     * （e2e 偶发：桩 0.5 秒后改回，机器忙的时候页面里的计时器晚了，那一眼还是先到）。 */
+    async staysSilent(ms) {
+        const until = Date.now() + ms;
+        for (;;) {
+            if (!(await this.videoState() || {}).silent) return false;
+            if (Date.now() >= until) return true;
+            await sleepFor([250, 450]);
         }
     }
 

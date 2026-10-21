@@ -211,6 +211,8 @@ test('另一套播放器(xtplayer)：同样能识别、起播、切倍速', asyn
     /* 这套播放器有看门狗，直接设 muted 会被它改回去，必须点它自己的音量按钮 */
     assert.ok(probe.log.includes('mute-reset:V4'), `桩应当复现看门狗把 muted 改回去: ${log}`);
     assert.ok(probe.log.includes('volume-click:V4'), `应当回退去点播放器的音量按钮: ${log}`);
+    assert.ok(probe.log.indexOf('volume-click:V4') < probe.log.indexOf('play:big:V4'),
+        `静音要在起播之前保持住，不能先带着声音播再补救: ${log}`);
     assert.ok(probe.log.includes('muted:V4'), `最终应当是静音的: ${log}`);
     assert.ok(probe.log.includes('rate:2:V4'), `应当切到菜单里最高的 2x: ${log}`);
     assert.ok(probe.log.includes('ended:V4'), `应当播完: ${log}`);
