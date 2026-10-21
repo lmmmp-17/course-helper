@@ -1,6 +1,10 @@
 
 # ***为了您更好地使用，请至少从开头看到 “二、注意事项”***
 
+GitHub 打不开的话，用 Gitee 镜像：<https://gitee.com/lmmmp-17/course-helper>（Windows 安装包在它的「发行版」里）。
+
+仅限非商业使用：本项目以 [CC BY-NC 4.0](LICENSE) 授权，不得用于商业盈利，详见文末「授权」。
+
 # 碎碎念
 
 本项目来自一个苦逼大学生和他的 Claude，在 GitHub 找了一圈，发现多多少少都有些小问题，比如过时和高风险，于是花了几天打磨了一下，本着技术平权和新手友好的原则搓了一个三合一工具，也同时针对主流的三个操作系统做了适配；**Windows 有 GUI，Linux 和 macOS 只有 TUI**
@@ -37,14 +41,15 @@ fork 上游作者的工作依然给了我很大启发，在此一并感谢🙏�
   - macOS：`brew install node`；Linux：用系统的包管理器装 `nodejs`。也可以到 [nodejs.org](https://nodejs.org/) 下载 LTS 版。
 - **智慧树不用自己装 Python**：第一次跑它时会自动准备好（Windows 上会问你要不要用 winget 装 uv）。
 - **下载**：
-  - Windows：到 [Releases](https://github.com/lmmmp-17/course-helper/releases) 下载最新的 **`course-helper-windows.zip`**，解压。三个工具和窗口版程序都在里面。
-  - Linux / macOS：在 GitHub 页面点 **Code → Download ZIP** 解压；或者 `git clone https://github.com/lmmmp-17/course-helper.git`。
+  - Windows：到 [GitHub Releases](https://github.com/lmmmp-17/course-helper/releases) 或 [Gitee 发行版](https://gitee.com/lmmmp-17/course-helper/releases) 下载最新的 **`course-helper-windows.zip`**，解压。三个工具和窗口版程序都在里面。
+    解压出来有好几个文件夹，**只需要双击 `网课助手.exe`**（一般在最下面），学习通、长江雨课堂、智慧树都在它里面选。别的文件夹是它要用的程序，不用点开，也别删。压缩包里的 `使用说明.txt` 写的也是这些。
+  - Linux / macOS：在 GitHub 页面点 **Code → Download ZIP** 解压；或者 `git clone https://github.com/lmmmp-17/course-helper.git`。GitHub 打不开就用 Gitee：`git clone https://gitee.com/lmmmp-17/course-helper.git`。
 
 ### 2. 打开控制台
 
 | 系统 | 怎么启动 |
 | --- | --- |
-| Windows | 双击解压出来的 **`网课助手.exe`**（窗口版）；或者双击 **`start.cmd`**（终端版） |
+| Windows | 双击解压出来的 **`网课助手.exe`**（窗口版，三个平台都在里面）；或者双击 **`start.cmd`**（终端版） |
 | Linux / macOS | 在仓库目录下执行 **`./start.sh`**（终端版） |
 
 窗口版和终端版用的是同一套后端和同一份设置，在哪边填过的值，换另一边打开都还在。两个不能同时开。
@@ -168,6 +173,12 @@ git subtree pull --prefix=autovisor https://github.com/lmmmp-17/Autovisor feat/l
 
 Fedora 上 git 不带 subtree，要先 `sudo dnf install git-subtree`；Windows 的 Git for Windows 和 macOS 的 git 都自带。
 
+### 发新版本（维护者）
+
+1. 推一个 `v*` 标签到 GitHub（比如 `git tag v0.1.1 && git push origin v0.1.1`）。GitHub Actions 会编译 `网课助手.exe`，打成 `course-helper-windows.zip`，发到 GitHub Releases；标签里带 `-` 的（比如 `v0.2.0-rc.1`）发成预发布版。
+2. Gitee 镜像不会自己跟上：到 <https://gitee.com/lmmmp-17/course-helper> 点仓库名旁边的同步按钮，拉取新的提交和标签。
+3. 在 Gitee 的「发行版」里新建同名版本，把 GitHub Releases 上的 `course-helper-windows.zip` 下载下来传上去（`gh release download v0.1.1 -R lmmmp-17/course-helper`）。
+
 ## 四、有价值的技术细节
 
 ### 为什么用 subtree，不用 submodule
@@ -238,6 +249,7 @@ Fedora 上 git 不带 subtree，要先 `sudo dnf install git-subtree`；Windows 
 ```
 course-helper/
 ├── README.md              ← 你正在看的
+├── LICENSE                CC BY-NC 4.0 全文
 ├── start.cmd              入口（Windows，终端版）
 ├── start.sh               入口（Linux / macOS，终端版）
 ├── desktop/windows/       Windows 窗口版外壳（网课助手.exe）：Go + WebView2，在 Releases 里发布
@@ -245,13 +257,16 @@ course-helper/
 ├── xuexitong/             学习通（来自 lmmmp-17/xuexitongScript）
 ├── yuketang/              长江雨课堂（来自 lmmmp-17/yuketang）
 ├── autovisor/             智慧树（来自 lmmmp-17/Autovisor）
+├── design/                界面设计稿
 └── scripts/
     └── sync-from-forks.sh 从三个 fork 同步更新
 ```
 
+只给维护者用的 `desktop/`、`scripts/`、`design/` 和 `.github/` 不进 Download ZIP，也不进发布包（`.gitattributes` 里的 `export-ignore`）。用户解压后看到的文件夹越少越好：有人对着一堆文件夹问过「该点哪个」。Windows 发布包里另外放了 `网课助手.exe` 和一份 `使用说明.txt`（源文件在 `desktop/windows/package/`）。
+
 ### 窗口版外壳（网课助手.exe）
 
-- 纯 Go（`github.com/jchv/go-webview2`，不需要 cgo），在 Linux 上交叉编译：`desktop/windows/build.sh`。推送 `v*` 标签时由 GitHub Actions 编译，和整个仓库一起打成 `course-helper-windows.zip` 发到 Releases（`.github/workflows/release.yml`）。仓库里不放二进制文件。
+- 纯 Go（`github.com/jchv/go-webview2`，不需要 cgo），在 Linux 上交叉编译：`desktop/windows/build.sh`。推送 `v*` 标签时由 GitHub Actions 编译，和仓库里用户要用的部分（`git archive`，见「目录结构」）以及 `使用说明.txt` 一起打成 `course-helper-windows.zip` 发到 Releases（`.github/workflows/release.yml`）。仓库里不放二进制文件。
 - 它自己不干活：起一个后端（`node launcher\run.mjs --handshake`），读到地址后用 WebView2 打开窗口，里面就是浏览器版的那个页面。关窗口时关掉后端的 stdin，后端停掉所有平台、等它们收尾后退出；exe 被强杀时管道一断，后端照样收尾。
 - 单实例：第二次双击把已经开着的窗口提到前面。和终端版互斥由后端的锁判断。
 - 关窗口：外壳截下关闭消息（`WM_CLOSE`，以及任务栏「关闭窗口」发的 `SC_CLOSE`），请页面判断要不要问，用的是页面里的确认框。页面要先应一声，1.5 秒内没应声（脚本坏了之类）就改用系统对话框，保证窗口总能关掉。
@@ -281,7 +296,11 @@ node --test launcher/tests/unit.test.mjs launcher/tests/backend.test.mjs launche
 
 ### 授权
 
-各目录沿用原项目的授权：`autovisor/` 是 MIT（见 [autovisor/LICENSE](autovisor/LICENSE)）；学习通和雨课堂的上游没有声明许可证。
+本项目的目的是让同学们免费用，**不允许拿去商业盈利**。
+
+- **本仓库自己写的部分**：控制台（`launcher/`）、窗口版外壳（`desktop/`）、界面设计（`design/`）、入口脚本、同步脚本和文档。**我对三个子项目做的修改**也一样。以上都以 [知识共享 署名-非商业性使用 4.0 国际（CC BY-NC 4.0）](https://creativecommons.org/licenses/by-nc/4.0/deed.zh-hans) 授权，全文见 [LICENSE](LICENSE)：可以自由使用、修改、转发，但要署名（注明来自 lmmmp-17/course-helper），而且**不得用于商业目的**，比如收费替别人挂网课、打包售卖、做成付费服务。
+- **上游原有的代码**仍按上游的授权，这里改不了，也不该改：`autovisor/` 来自 CXRunfree/Autovisor，是 MIT（见 [autovisor/LICENSE](autovisor/LICENSE)，版权声明照原样保留）；学习通和雨课堂的上游都没有声明许可证。
+- 所以，智慧树上游那部分原始代码别人照样可以按 MIT 去用；非商业的限制管的是这个仓库新增和改动的部分。
 
 ---
 

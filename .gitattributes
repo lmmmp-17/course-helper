@@ -4,5 +4,15 @@
 *.mjs text eol=lf
 *.js  text eol=lf
 
-# 设计稿（截图、原型）只留在仓库里，Download ZIP 和发布包里不带
+# 发布包里随 exe 附带的说明：给记事本看的，保留 CRLF 和 BOM，git 别动它
+desktop/windows/package/*.txt -text
+
+# 只给维护者用的东西只留在仓库里，Download ZIP 和发布包里不带：
+# 设计稿（截图、原型）、exe 的源码、同步脚本、CI 配置。
+# 用户解压后看到的文件夹越少越好（有人对着一堆文件夹问「该点哪个」）
 design/ export-ignore
+desktop/ export-ignore
+scripts/ export-ignore
+.github/ export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore

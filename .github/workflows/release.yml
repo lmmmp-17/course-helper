@@ -49,8 +49,10 @@ jobs:
           # git archive 按 .gitattributes 输出：.cmd 是 CRLF，.sh 保留可执行位
           git archive --format=tar --prefix=course-helper/ HEAD | tar -x -C "$RUNNER_TEMP/pkg"
           cp "$RUNNER_TEMP/网课助手.exe" "$RUNNER_TEMP/pkg/course-helper/"
+          # 解压后告诉人只点 exe（有人对着一堆文件夹问「该点哪个」）
+          cp "desktop/windows/package/使用说明.txt" "$RUNNER_TEMP/pkg/course-helper/"
           (cd "$RUNNER_TEMP/pkg" && zip -qr "$GITHUB_WORKSPACE/course-helper-windows.zip" course-helper)
-          unzip -l course-helper-windows.zip | grep -E "网课助手.exe|start.cmd|launcher/run.mjs"
+          unzip -l course-helper-windows.zip | grep -E "网课助手.exe|使用说明.txt|start.cmd|launcher/run.mjs|LICENSE"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -67,4 +69,4 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then PRERELEASE="--prerelease"; fi
           gh release create "$GITHUB_REF_NAME" course-helper-windows.zip $PRERELEASE \
             --title "网课助手 $GITHUB_REF_NAME" \
-            --notes "Windows：下载 course-helper-windows.zip，解压后双击里面的「网课助手.exe」。需要 Node.js 20 以上（没有的话会提示用 winget 安装）。Linux / macOS：用源码里的 ./start.sh。"
+            --notes "Windows：下载 course-helper-windows.zip，解压后只需要双击里面的「网课助手.exe」，别的文件夹不用点开。需要 Node.js 20 以上（没有的话会提示用 winget 安装）。Linux / macOS：用源码里的 ./start.sh。GitHub 打不开的话，Gitee 镜像：https://gitee.com/lmmmp-17/course-helper 。仅限非商业使用（CC BY-NC 4.0，详见 README 的「授权」）。"
