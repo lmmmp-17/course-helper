@@ -715,3 +715,34 @@ test('从启动器跑（COURSE_UI=1）时，日志里不教人按 Ctrl+C：停�
     assert.equal(keyHint('，按 Ctrl+C 退出', { COURSE_UI: '1' }), '');
     assert.equal(keyHint('，按 Ctrl+C 退出', {}), '，按 Ctrl+C 退出');
 });
+
+test('从启动器跑时，状态行每次变化都单独发一行 [[status]]，不按分钟节流', () => {
+    const out = [];
+    const stream = { write: (text) => out.push(text), isTTY: false };
+    const log = createLogger('quiet', { stream, ui: true, now: () => 0 });
+    log.status('⏳ 等你打开课程（已等 2 秒）');
+    log.status('⏳ 等你打开课程（已等 2 秒）');
+    log.status('⏳ 等你打开课程（已等 3 秒）');
+    log.clearStatus();
+    log.clearStatus();
+    assert.deepEqual(out, [
+        '[[status]] ⏳ 等你打开课程（已等 2 秒）\n',
+        '[[status]] ⏳ 等你打开课程（已等 3 秒）\n',
+        '[[status]] \n',
+    ], '一样的不重复发；收掉状态发一条空的');
+});
+
+test('等课程页的时候浏览器被关掉：不再等下去，正常退出', async () => {
+    const { EventEmitter } = await import('node:events');
+    const context = new EventEmitter();
+    context.pages = () => [];
+    setTimeout(() => context.emit('close'), 200);
+    const startedAt = Date.now();
+    assert.equal(await pickCoursePage(context, { ...defaults }, silent, { stopped: false }), null);
+    assert.ok(Date.now() - startedAt < 2500, '一轮之内发现');
+    assert.equal(context.listenerCount('close'), 0, '监听要摘掉');
+
+    /* 连接断了但没收到 close 事件，也认 */
+    const cut = { pages: () => [], browser: () => ({ isConnected: () => false }) };
+    assert.equal(await pickCoursePage(cut, { ...defaults }, silent, { stopped: false }), null);
+});

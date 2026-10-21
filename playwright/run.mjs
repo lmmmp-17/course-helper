@@ -114,9 +114,11 @@ async function main() {
         process.off('SIGTERM', shutdown);
         unwatchStop();
         /* close() 里已经区分了“自己启动的要关掉”和“连上去的只断开” */
+        /* 浏览器已经被用户关掉的话，就别再说它「还开着」 */
+        const browserOpen = session.browser?.isConnected?.() !== false;
         await session.close();
         /* 这句要排在错误信息后面, 所以留到进程退出前再打 */
-        if (session.launchedBrowser) {
+        if (session.launchedBrowser && browserOpen) {
             parting = `提示：脚本启动的那个专用 ${session.browserName} 还开着（登录状态保存在里面）。`
                 + '用完请关掉它——调试端口开着的时候，本机任何程序都能控制它。';
         }
