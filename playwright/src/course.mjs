@@ -12,6 +12,7 @@
 import { SEL } from './selectors.mjs';
 import { human, sleep, sleepFor } from './human.mjs';
 import { bar, clip, formatDuration, formatTime } from './display.mjs';
+import { keyHint } from './stop-signal.mjs';
 
 /* 从当前小节往后找下一节要去的。
  *
@@ -637,7 +638,7 @@ export class CourseRunner {
         const tree = await this.readTree();
         this.currentTitle = tree.current ? tree.current.title || '' : '';
         this.log.say(`课程共 ${tree.chapters.length} 章 ${tree.total} 节，当前：${this.currentTitle || '未定位'}`);
-        this.log.say('开始了。可以把浏览器窗口放到后面去，但别最小化。按 Ctrl+C 停止。');
+        this.log.say(`开始了。可以把浏览器窗口放到后面去，但别最小化。${keyHint('按 Ctrl+C 停止。')}`);
 
         while (!this.stopped) {
             if (this.config.maxSections > 0 && this.sectionsDone >= this.config.maxSections) {

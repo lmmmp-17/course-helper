@@ -24,6 +24,7 @@ import { spawn } from 'node:child_process';
 import { isAllowedUrl, HOME_URL, COURSE_PAGE } from './selectors.mjs';
 import { BROWSERS, browserName, findBrowser, launchHint, sideProfileDir, dedicatedArgs } from './platform.mjs';
 import { sleep } from './human.mjs';
+import { keyHint } from './stop-signal.mjs';
 
 async function loadPlaywright() {
     try {
@@ -221,13 +222,13 @@ export async function pickCoursePage(context, config, log, abort = { stopped: fa
         return page;
     }
 
-    log.say('请在浏览器里登录学习通，进入要刷的课程，点开任意一节（播放页）。打开之后会自动开始，按 Ctrl+C 退出。');
+    log.say(`请在浏览器里登录学习通，进入要学的课程，点开任意一节（播放页）。打开之后会自动开始${keyHint('，按 Ctrl+C 退出')}。`);
     const deadline = config.waitCourseMs > 0 ? Date.now() + config.waitCourseMs : Infinity;
     const waitingSince = Date.now();
     while (!abort.stopped && Date.now() < deadline) {
         await sleep(1500);
         /* 转一下让用户知道脚本还活着, 不是卡死了 */
-        log.status(`⏳ 等你打开课程播放页…（已等 ${Math.round((Date.now() - waitingSince) / 1000)} 秒，Ctrl+C 退出）`);
+        log.status(`⏳ 等你打开课程播放页…（已等 ${Math.round((Date.now() - waitingSince) / 1000)} 秒${keyHint('，Ctrl+C 退出')}）`);
         const page = find();
         if (page) {
             log.clearStatus();
