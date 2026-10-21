@@ -225,12 +225,20 @@ export async function pickCoursePage(context, config, log, abort = { stopped: fa
     log.say(`请在浏览器里登录学习通，进入要学的课程，点开任意一节（播放页）。打开之后会自动开始${keyHint('，按 Ctrl+C 退出')}。`);
     const deadline = config.waitCourseMs > 0 ? Date.now() + config.waitCourseMs : Infinity;
     const waitingSince = Date.now();
-    while (!abort.stopped && Date.now() < deadline) {
+    /* 浏览器被关掉（用户关了窗口、崩了）就别再等：以前会一直显示「已等 N 秒」。
+     * 连接断开时 context 会发 close（实测 CDP Browser.close 后几十毫秒内） */
+    let closed = false;
+    const onClose = () => { closed = true; };
+    context.on?.('close', onClose);
+    const gone = () => closed || context.browser?.()?.isConnected?.() === false;
+    while (!abort.stopped && !gone() && Date.now() < deadline) {
         await sleep(1500);
+        if (gone()) break;
         /* 转一下让用户知道脚本还活着, 不是卡死了 */
         log.status(`⏳ 等你打开课程播放页…（已等 ${Math.round((Date.now() - waitingSince) / 1000)} 秒${keyHint('，Ctrl+C 退出')}）`);
         const page = find();
         if (page) {
+            context.off?.('close', onClose);
             log.clearStatus();
             log.say(`找到课程页: ${page.url()}`);
             /* 页面刚开始加载，让它先稳一会儿再动手 */
@@ -238,6 +246,12 @@ export async function pickCoursePage(context, config, log, abort = { stopped: fa
             return page;
         }
     }
+    context.off?.('close', onClose);
     log.clearStatus();
+    /* 没有课程页可接管，当作用户不想跑了：正常退出 */
+    if (gone() && !abort.stopped) {
+        log.say('浏览器被关掉了，不再等课程页。');
+        return null;
+    }
     throw new Error(abort.stopped ? '已退出' : '等了很久没有看到课程播放页，已退出。');
 }
