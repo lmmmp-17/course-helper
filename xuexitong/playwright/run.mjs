@@ -40,6 +40,9 @@ async function main() {
 
     /* 第一次运行（或 --setup）先把依赖装上，用户不用单独执行 npm install */
     ensureInstalled(log, { force: setup });
+    /* Windows 上双击运行时，窗口标题停在最后一条外部命令上（pc 看到的是「npm install」）。
+     * 在启动器里不改：终端版和工具共用一个控制台，标题归它管 */
+    if (process.platform === 'win32' && process.env.COURSE_UI !== '1' && process.stdout.isTTY) process.title = '学习通';
 
     const session = await openBrowser(config, log);
     process.on('SIGINT', shutdown);

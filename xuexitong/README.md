@@ -129,7 +129,7 @@ Linux / macOS 上用 Edge 的话，把命令换成 `microsoft-edge` 或 `"/Appli
 
 - 失焦靠焦点模拟兜住（页面里 `hasFocus()` 一直是 `true`），但 `document.visibilityState` 没有办法模拟：最小化、在同一窗口切到别的标签页，页面都会变成 `hidden`，视频随之暂停。
 - Windows 上还多一种情况：浏览器会追踪窗口有没有被盖住。实测（Chrome 155 / Win11）窗口被别的窗口完全盖住后 1 秒内页面就变 `hidden`，视频被直接暂停，盖着的那段时间进度一点不走。启动参数 `--disable-backgrounding-occluded-windows` 能让它被盖住时保持 `visible`（Chrome 和 Edge 都实测过），但兜不住最小化。脚本自己开的浏览器都带这一项。
-- 挪到另一个虚拟桌面：Linux 上学习通、雨课堂都实测过，照常播放（2026-10-21）。Windows 上还没实测。
+- 挪到另一个虚拟桌面：Linux 上学习通、雨课堂都实测过，照常播放（2026-10-21）。Windows 上不在当前桌面的 40 秒里，页面一直是 `visible`，靠的应该也是 `--disable-backgrounding-occluded-windows`；只看了页面状态，播放进度还没实测。
 
 ### 为什么鼠标移进窗口，视频会停一下
 

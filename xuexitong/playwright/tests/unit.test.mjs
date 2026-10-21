@@ -746,3 +746,17 @@ test('等课程页的时候浏览器被关掉：不再等下去，正常退出',
     const cut = { pages: () => [], browser: () => ({ isConnected: () => false }) };
     assert.equal(await pickCoursePage(cut, { ...defaults }, silent, { stopped: false }), null);
 });
+
+test('Windows 入口 start.cmd 只有 ASCII；用到的提示文字都在 start-messages.txt 里', async () => {
+    const { readFileSync } = await import('node:fs');
+    const cmd = readFileSync(new URL('../../start.cmd', import.meta.url), 'utf8');
+    /* 控制台是 UTF-8 时，cmd 会读错含多字节字符的批处理：按行的位置把中文行截断，
+     * 后半截当成命令执行（pc 在 Windows 11 上实测，窗口版的记录里也看得到） */
+    assert.ok(/^[\x00-\x7f]*$/.test(cmd), 'start.cmd 里不能有非 ASCII 字符');
+    const raw = readFileSync(new URL('../start-messages.txt', import.meta.url));
+    assert.notDeepEqual([...raw.subarray(0, 3)], [0xef, 0xbb, 0xbf], '不能带 BOM，不然第一行的键认不出来');
+    const keys = new Set(raw.toString('utf8').split(/\r?\n/).filter((line) => /^[\w-]+=/.test(line)).map((line) => line.split('=')[0]));
+    const used = [...cmd.matchAll(/call :say ([\w-]+)/g)].map((match) => match[1]);
+    assert.ok(used.length >= 5);
+    for (const key of used) assert.ok(keys.has(key), `start-messages.txt 里缺 ${key}`);
+});
