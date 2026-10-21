@@ -57,31 +57,58 @@ if errorlevel 1 goto :fail
 
 rem 3. Dependencies: numpy and opencv too when the slider captcha is on.
 rem    Quick when they are already installed.
+rem    Python and the packages come from mirrors in China by default: most
+rem    people using this are there, where GitHub (uv's Python builds) and PyPI
+rem    are slow or unreachable from many networks. Mirrors set by the user win.
+rem    The versions stay those of uv.lock; uv only rewrites the download URLs
+rem    in it (checked). If the mirrors fail, try the official sources once.
 set "EXTRA="
 findstr /r /i /c:"^ *enableAutoCaptcha *= *true" "%CONFIG%" >nul && set "EXTRA=--extra captcha"
+set "MIRRORED="
+if defined UV_DEFAULT_INDEX goto :index_set
+set "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple"
+set "MIRRORED=1"
+:index_set
+if defined UV_PYTHON_INSTALL_MIRROR goto :python_mirror_set
+set "UV_PYTHON_INSTALL_MIRROR=https://registry.npmmirror.com/-/binary/python-build-standalone"
+set "MIRRORED=1"
+:python_mirror_set
 call :say checking
+uv sync %EXTRA%
+if not errorlevel 1 goto :run
+if not defined MIRRORED goto :sync_failed
+call :say sync-official
+set "UV_DEFAULT_INDEX="
+set "UV_PYTHON_INSTALL_MIRROR="
 uv sync %EXTRA%
 if errorlevel 1 goto :sync_failed
 
 rem 4. Run
+:run
 uv run python -u Autovisor.py %*
 set "CODE=%errorlevel%"
 goto :end
 
 :install_uv
 call :say no-uv
-where winget >nul 2>nul
-if errorlevel 1 goto :manual_uv
 rem Under the launcher nobody can answer a question: stdin is its pipe, and
 rem neither the window nor the terminal version can type into it, so a run sat
 rem at this question for good (seen on a friend's first run). Starting
 rem Zhihuishu there is the go-ahead; a double-clicked run.cmd still asks.
-if "%COURSE_UI%"=="1" goto :winget_uv
-call :say ask-winget
+if "%COURSE_UI%"=="1" goto :get_uv
+call :say ask-install-uv
 choice /c YN
 if errorlevel 2 goto :manual_uv
-:winget_uv
+:get_uv
+rem First from a PyPI mirror (see resources\install-uv.ps1): winget and uv's
+rem own installer both download from GitHub.
 call :say installing-uv
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0resources\install-uv.ps1"
+where uv >nul 2>nul
+if not errorlevel 1 exit /b 0
+where winget >nul 2>nul
+if errorlevel 1 goto :uv_failed
+call :say installing-uv-winget
 rem In the launcher's log winget's progress bars come out as garbage: keep its
 rem output in a file there, and say where it is if the install fails.
 set "WINGET_LOG=CON"
@@ -89,8 +116,9 @@ if "%COURSE_UI%"=="1" set "WINGET_LOG=%TEMP%\autovisor-winget.log"
 winget install --id astral-sh.uv -e --accept-source-agreements --accept-package-agreements >"%WINGET_LOG%" 2>&1
 where uv >nul 2>nul
 if not errorlevel 1 exit /b 0
-call :say winget-failed
 if not "%WINGET_LOG%"=="CON" call :say winget-log
+:uv_failed
+call :say uv-failed
 :manual_uv
 call :say manual-uv
 exit /b 1

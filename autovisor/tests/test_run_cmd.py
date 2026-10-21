@@ -15,6 +15,11 @@ class RunCmdTest(unittest.TestCase):
         text = (ROOT / "run.cmd").read_bytes()
         self.assertTrue(text.isascii(), "run.cmd 里不能有非 ASCII 字符")
 
+    def test_install_uv_script_is_ascii(self):
+        # Windows PowerShell 5.1 按 ANSI 代码页读不带 BOM 的脚本
+        text = (ROOT / "resources" / "install-uv.ps1").read_bytes()
+        self.assertTrue(text.isascii(), "install-uv.ps1 里不能有非 ASCII 字符")
+
     def test_every_message_key_exists(self):
         cmd = (ROOT / "run.cmd").read_text(encoding="ascii")
         raw = (ROOT / "resources" / "run-messages.txt").read_bytes()
