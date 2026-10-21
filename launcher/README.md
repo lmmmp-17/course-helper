@@ -90,15 +90,15 @@
 
 所有接口都要 `?token=`，token 在启动时随机生成、打印在那条地址里。原因是这个服务能在你机器上启动进程——本机任何一个网页要是能随便调它就太糟了。服务只绑 `127.0.0.1`。
 
-工具输出里以 `[[status]] ` 开头的行会被当成「当前在干什么」单独显示，其余按日志走。工具没有这个前缀时界面就拿最新一行日志当状态，功能照常。
+工具输出里以 `[[status]] ` 开头的行会被当成「当前在干什么」单独显示，不进日志；后面是空的表示工具把状态收掉了。工具没有这个前缀时界面就拿最新一行日志当状态，功能照常。学习通、雨课堂在 `COURSE_UI=1` 时发这种行，每次变化发一次（自己终端里跑时是就地刷新的那一行，输出到文件时每分钟记一行）；智慧树还没有。
 
 Windows 上入口是 `.cmd`，要经过 `cmd.exe` 启动：
 
 - 启动时自己拼 `cmd.exe /d /s /c ""入口" "参数"…"`，不用 `shell: true` 加参数数组（新版 Node 标成弃用，DEP0190）。参数只来自登记表和界面选项，带 cmd 特殊字符的一律拒绝。
-- 直接结束子进程只会结束外层的 `cmd.exe`，真正在播的 node / python 会留在后台，所以「停止」按进程树结束。先 `taskkill /T`（不带 `/F`）给树里的窗口发关闭消息：智慧树的 Edge 这样关掉，Playwright 会自己删掉临时 profile；直接 `/F` 的话 `%TEMP%` 里每停一次就留下一个 `playwright_chromiumdev_profile-*`（实测）。5 秒后还没退出的（命令行进程没有窗口可关）再 `taskkill /T /F`。
+- 「停止」是关掉子进程的 stdin：三个工具在 `COURSE_UI=1` 时把它当成 Ctrl+C，自己收尾（打印总结、智慧树关掉 Edge 并删掉 Playwright 的临时 profile）。隔着 `cmd.exe` 发不了 Ctrl+C；以前先 `taskkill /T` 再 `/T /F`，但 Edge 没有窗口的子进程会让不带 `/F` 的那一步整条链都失败，`%TEMP%` 里每停一次留下一个 `playwright_chromiumdev_profile-*`（实测）。8 秒后还没退出才 `taskkill /T /F` 整棵树。
 - 入口脚本看到 `COURSE_UI=1` 就不在结尾 `pause`：控制台给它的 stdin 是一直开着的管道，`pause` 会永远等下去，界面上就一直显示「在跑」（实测）。
 
-Linux / macOS 上先发 SIGINT 让工具自己收尾，8 秒后还在就强制结束。
+Linux / macOS 上同样先关 stdin（不再同时发 SIGINT，免得工具收到两次中断），8 秒后还在就按进程组 SIGKILL：工具是用 `detached` 起的，自己一个进程组。
 
 ## 测试
 
@@ -114,6 +114,5 @@ node --test launcher/tests/unit.test.mjs launcher/tests/backend.test.mjs launche
 
 ## 还没做的
 
-- 三个工具还没有发 `[[status]]`，所以状态目前靠最新一行日志顶着。
-- Windows 上并行和 `taskkill /T /F` 停止已经实测通过；改成先 `/T` 再 `/F` 之后还没在 Windows 上复测。
+- 智慧树还没有发 `[[status]]`，它的状态靠最新一行日志顶着。
 - ZHS（另一个智慧树项目）还没进登记表：它不开浏览器，是直接伪造观看记录的，和这三个路子不一样，要不要放进来再定。

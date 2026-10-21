@@ -945,6 +945,8 @@ window.courseHelperAskClose = () => {
   if (!ui.linked || !running().length) { closeWindow(); return; }
   askClose();
 };
+/* 外壳等不到应答、改用系统对话框问的时候，把这边晚到的确认框收掉，只留一个 */
+window.courseHelperDropAsk = () => { if ($('confirm').open) $('confirm').close(); };
 
 /* ---------- 实时事件 ---------- */
 function load(id, data) {

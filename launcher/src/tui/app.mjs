@@ -19,7 +19,7 @@
  * ------------------------------------------------------------------ */
 import { byId, describe } from '../tools.mjs';
 import { STYLE, openScreen } from './screen.mjs';
-import { fit, textWidth, wrap } from './width.mjs';
+import { fit, textWidth, truncate, wrap } from './width.mjs';
 import { NOTE_PREP, NOTE_RUN, ago, clock, exitText, parseLine, phaseAfter, since, summarize } from '../present.mjs';
 
 const MAX_LOG = 1000;
@@ -28,6 +28,13 @@ const MIN_WIDTH = 60;
 const MIN_HEIGHT = 18;
 
 const keyOf = (option) => option.flag || option.key.join('.');
+
+/* 工具的状态行是给窗口版和工具自己的终端写的：进度条方块、开头的 ▶ ⏳ 这类符号
+ * 在中文 Windows 控制台里是两列宽，会把这一行撑歪。终端版换成 ASCII、去掉开头的符号 */
+export const forTerminal = (text) => String(text)
+    .replace(/█/g, '#').replace(/░/g, '-')
+    .replace(/^[\u2190-\u2bff\u{1f300}-\u{1faff}]\ufe0f?\s*/u, '');
+const LOG_ROWS_PER_LINE = 3;
 
 function initialValue(option) {
     if (option.current !== undefined) return option.current;
@@ -145,6 +152,8 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
         onChange();
         try {
             await runner.start(byId(tool.id), { ...form.values });
+            /* 跑完回来看到的是收起的设置：展开着的话焦点还在输入框里，按 Q 会变成打字 */
+            form.open = false;
         } catch (error) {
             run.error = error.message;
         } finally {
@@ -314,7 +323,10 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
         if (state.confirmQuit) return { text: ` 还有 ${running().length} 个平台在跑，退出会把它们都停掉。按 y 退出，其它键取消。`, style: STYLE.penStrong };
         const parts = [];
         if (tool.ready && !run.run && form.open) {
-            parts.push('Tab / 上下 换一项', '空格 勾选、切换', 'Esc 收起', 'Enter 开始', 'Q 退出');
+            parts.push('Tab / 上下 换一项', '空格 勾选、切换', 'Esc 收起', 'Enter 开始');
+            /* 焦点在输入框里时 Q 是字，不能写「Q 退出」 */
+            const focused = fieldsOf(tool)[form.focus];
+            if (!focused || !['text', 'number', 'password'].includes(focused.type)) parts.push('Q 退出');
         } else {
             parts.push('1 2 3 切换平台');
             if (run.run) parts.push(`S 停止：${tool.name}`);
@@ -373,7 +385,11 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
          * 这里页边只有 14 列，「结束于 13:17:38」放不下 */
         if (run.run) {
             rows.push([]);
-            rows.push([...margin(`已运行 ${since(run.run.startedAt, now())}`), { text: ` ${run.toolStatus || run.lastLine || '正在启动...'} `, style: STYLE.mark }]);
+            /* 状态太长就折成两行，不在右边截断（雨课堂等课程页的那句提示很长） */
+            const status = forTerminal(run.toolStatus || run.lastLine || '正在启动...');
+            const [first, ...more] = wrap(status, bodyWidth(width) - 2);
+            rows.push([...margin(`已运行 ${since(run.run.startedAt, now())}`), { text: ` ${first} `, style: STYLE.mark }]);
+            if (more.length) rows.push([...indent(), { text: ` ${truncate(more.join(''), bodyWidth(width) - 2)} `, style: STYLE.mark }]);
             rows.push(...prose(run.phase === 'prepare' ? NOTE_PREP : NOTE_RUN, width, run.phase === 'prepare' ? '' : STYLE.soft));
         } else if (run.exit) {
             const { text, failed } = exitText(run.exit);
@@ -390,13 +406,20 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
             rows.push([...margin('记录'), { text: `${fresh}${scrolled}`, style: STYLE.soft }]);
             const pane = room - 2;
             const lines = run.lines;
-            state.logScroll = Math.min(state.logScroll, Math.max(0, lines.length - pane));
-            const end = lines.length - state.logScroll;
-            for (const line of lines.slice(Math.max(0, end - pane), end)) {
+            /* 翻页按条算；长的一条折成几行（最多 3 行），从最新的往上填满窗格 */
+            state.logScroll = Math.min(state.logScroll, Math.max(0, lines.length - 1));
+            const block = [];
+            for (let i = lines.length - 1 - state.logScroll; i >= 0 && block.length < pane; i -= 1) {
+                const line = lines[i];
                 const mark = line.level === 'error' ? 'x ' : line.level === 'warn' ? '! ' : '';
                 const style = line.level === 'error' ? STYLE.penStrong : line.level === 'warn' ? STYLE.pencil : '';
-                rows.push([...margin(line.time), { text: `${mark}${line.text}`, style }]);
+                const pieces = wrap(`${mark}${line.text}`, bodyWidth(width));
+                if (pieces.length > LOG_ROWS_PER_LINE) {
+                    pieces.splice(LOG_ROWS_PER_LINE - 1, Infinity, truncate(pieces.slice(LOG_ROWS_PER_LINE - 1).join(''), bodyWidth(width)));
+                }
+                block.unshift(...pieces.map((piece, k) => [...(k ? indent() : margin(line.time)), { text: piece, style }]));
             }
+            rows.push(...block.slice(-pane));
         }
 
         while (rows.length < height - 2) rows.push([]);

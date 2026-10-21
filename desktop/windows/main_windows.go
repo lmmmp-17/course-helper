@@ -66,7 +66,9 @@ const (
 	wmSetIcon       = 0x0080
 	wmSysCommand    = 0x0112
 	scClose         = 0xF060
-	swRestore       = 9
+	// WM_APP 本身被 go-webview2 拿去做 Dispatch 了，这里用下一个
+	wmAskTimeout = 0x8001
+	swRestore    = 9
 
 	iconSmall  = 0
 	iconBig    = 1
@@ -428,6 +430,7 @@ var (
 	guardView    webview2.WebView
 	guardHwnd    uintptr
 	closeAllowed atomic.Bool
+	nativeAsking atomic.Bool
 	askSeq       atomic.Int64
 	ackedSeq     atomic.Int64
 	guardProc    = windows.NewCallback(closeGuard)
@@ -438,7 +441,14 @@ var (
 func closeGuard(hwnd, msg, wp, lp uintptr) uintptr {
 	closing := msg == wmClose || (msg == wmSysCommand && wp&0xFFF0 == scClose)
 	if closing && !closeAllowed.Load() {
-		askToClose()
+		/* 系统对话框已经开着：不再叫页面也弹一个 */
+		if !nativeAsking.Load() {
+			askToClose()
+		}
+		return 0
+	}
+	if msg == wmAskTimeout {
+		pageDidNotAnswer(int64(wp))
 		return 0
 	}
 	if msg == wmSettingChange && lp != 0 && windows.UTF16PtrToString((*uint16)(unsafe.Pointer(lp))) == "ImmersiveColorSet" {
@@ -454,10 +464,22 @@ func askToClose() {
 	guardView.Eval("window.courseHelperAskClose && window.courseHelperAskClose()")
 	go func() {
 		time.Sleep(1500 * time.Millisecond)
-		if ackedSeq.Load() < seq {
-			guardView.Dispatch(nativeConfirmClose)
-		}
+		// 投给窗口，不用 Dispatch：Dispatch 走 PostThreadMessage，窗口处在模态循环里
+		// （拖动窗口、对话框）时线程消息会被丢掉，窗口消息不会
+		_, _, _ = procPostMessageW.Call(guardHwnd, wmAskTimeout, uintptr(seq), 0)
 	}()
+}
+
+// 到这时才看页面应没应，不在计时的那一刻判断。pc 实测：单按一下 Alt 进了菜单模式时，
+// 关闭请求、页面的应答、这条消息会被一起搁着，按 Esc 后一起放出来，先后不定；
+// 以前在计时那一刻就定了要弹系统框，结果页面的确认框和系统框同时出现。
+func pageDidNotAnswer(seq int64) {
+	if ackedSeq.Load() >= seq || closeAllowed.Load() || nativeAsking.Load() {
+		return
+	}
+	/* 页面的确认框可能晚一步弹出来：先收掉，只留系统对话框 */
+	guardView.Eval("window.courseHelperDropAsk && window.courseHelperDropAsk()")
+	nativeConfirmClose()
 }
 
 func allowClose() {
@@ -466,6 +488,8 @@ func allowClose() {
 }
 
 func nativeConfirmClose() {
+	nativeAsking.Store(true)
+	defer nativeAsking.Store(false)
 	if names := runningTools(guardURL); len(names) > 0 {
 		text := fmt.Sprintf("还有 %d 个平台在跑（%s），关掉窗口会把它们都停掉。\n\n确定要关掉吗？",
 			len(names), strings.Join(names, "、"))

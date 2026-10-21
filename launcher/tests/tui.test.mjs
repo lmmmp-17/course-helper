@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { charWidth, textWidth, truncate, fit, wrap } from '../src/tui/width.mjs';
 import { parseKeys, renderRow } from '../src/tui/screen.mjs';
-import { createApp } from '../src/tui/app.mjs';
+import { createApp, forTerminal } from '../src/tui/app.mjs';
 import { createRunner } from '../src/runner.mjs';
 import { createSettings } from '../src/settings.mjs';
 import { describe } from '../src/tools.mjs';
@@ -227,4 +227,40 @@ test('终端版：输入框里的 q 是字；没在跑时 q 直接退出', async
 test('终端版：窗口太小时说清楚', async (t) => {
     const { app } = await setup(t);
     assert.match(app.view(50, 10)[0][0].text, /终端窗口太小了/);
+});
+
+test('终端版：从展开的设置里开始，停下后设置是收起的，Q 能直接退出；焦点在输入框时底栏不写「Q 退出」', async (t) => {
+    const { app, screen, press, started, children } = await setup(t);
+    press('c');                    /* 焦点在「最多播几节」输入框 */
+    assert.doesNotMatch(screen().split('\n').at(-1), /Q 退出/, '这时按 Q 是打字');
+    press('tab');                  /* 倍速：单选，Q 不是字 */
+    assert.match(screen().split('\n').at(-1), /Q 退出/);
+    press('backtab', 'enter');
+    await started(1);
+    children.xuexitong.emit('close', 0, null);
+    assert.match(screen(), /设置 {2}倍速 最高，浏览器 自动/, '回来是收起的');
+    press('q');
+    await app.done;
+});
+
+test('终端版：状态太长折成两行；进度条方块换成 ASCII；长日志折行，翻页仍按条算', async (t) => {
+    const { screen, press, started, children } = await setup(t);
+    press('enter');
+    await started(1);
+    children.xuexitong.stdout.emit('data', '[[status]] ▶ 1.3 函数的极限  ██████░░░░  60%  12:00/20:00\n');
+    let view = screen();
+    assert.match(view, /已运行 0:00 {3}1\.3 函数的极限 {2}######---- {2}60%/);
+    assert.doesNotMatch(view, /[▶█░]/);
+
+    const long = '请在浏览器里登录雨课堂，进入要学的课程，点开任意一个视频（地址里带 /ai-workspace/lms-graph/）。打开之后会自动开始。';
+    children.xuexitong.stdout.emit('data', '[[status]] \n');
+    children.xuexitong.stdout.emit('data', `[12:00:01] ${long}\n`);
+    view = screen(80, 30);
+    const status = view.split('\n').findIndex((row) => row.includes('已运行'));
+    assert.match(view.split('\n')[status + 1], /^ {16} .*打开之后会自动开始。 $/, '状态折到第二行，不在右边截断');
+    assert.match(view, /12:00:01 {2}请在浏览器里登录雨课堂/);
+    assert.match(view, /\n {16}.*打开之后会自动开始。\n/, '记录里的长行也折行');
+
+    assert.equal(forTerminal('⏳ 等你打开课程播放页…（已等 2 秒）'), '等你打开课程播放页…（已等 2 秒）');
+    assert.equal(forTerminal('📖 第三章 · 还剩 20 秒'), '第三章 · 还剩 20 秒');
 });

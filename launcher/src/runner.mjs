@@ -71,7 +71,8 @@ export function createRunner({ root, platform = process.platform, spawnProcess =
         const { current } = run;
         if (!current) return;
         const tool = run.tool.id;
-        if (line.startsWith(STATUS_PREFIX)) {
+        /* 「[[status]] 」后面是空的，表示工具把状态收掉了（行尾空格被吃掉也认） */
+        if (line.startsWith(STATUS_PREFIX) || line === STATUS_PREFIX.trim()) {
             current.status = line.slice(STATUS_PREFIX.length);
             emit({ type: 'status', tool, status: current.status });
             return;
