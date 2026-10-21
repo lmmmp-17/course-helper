@@ -36,15 +36,40 @@ fork 上游作者的工作依然给了我很大启发，在此一并感谢🙏�
 ### 1. 准备（只做一次）
 
 - **浏览器**：Google Chrome 或 Microsoft Edge，用你电脑上装的那个。Windows 自带 Edge，没装 Chrome 也能用。
-- **Node.js 20 或更新**：
-  - Windows：没装也没关系，第一次运行 `start.cmd` 时会问你要不要用 winget 自动装。
-  - macOS：`brew install node`；Linux：用系统的包管理器装 `nodejs`。也可以到 [nodejs.org](https://nodejs.org/) 下载 LTS 版。
+- **Node.js 20 或更新**：学习通、雨课堂和控制台都靠它运行。没装过、不知道装没装，看下面的[「装 Node.js」](#装-nodejs)。
 - **智慧树不用自己装 Python**：第一次跑它时会自动准备好。Windows 上还要一个叫 uv 的小工具，没有的话，在网课助手里点开始会自动装上（要等一两分钟）；单独双击 `autovisor\run.cmd` 时会先问你。
 - **不用开代理**：第一次运行要下载的依赖，默认都从国内镜像下载（npmmirror、清华 PyPI）。镜像不行时会自动改用官方源再试一次。
 - **下载**：
   - Windows：到 [GitHub Releases](https://github.com/lmmmp-17/course-helper/releases) 或 [Gitee 发行版](https://gitee.com/lmmmp-17/course-helper/releases) 下载最新的 **`course-helper-windows.zip`**，解压。三个工具和窗口版程序都在里面。
     解压出来有好几个文件夹，**只需要双击 `网课助手.exe`**（一般在最下面），学习通、长江雨课堂、智慧树都在它里面选。别的文件夹是它要用的程序，不用点开，也别删。压缩包里的 `使用说明.txt` 写的也是这些。
+  - **第一次双击时 Windows 可能弹出蓝色的「Windows 已保护你的电脑」**：点「更多信息」，再点「仍要运行」。这是 Windows 自带的 SmartScreen：从网上下载的程序，没有花钱买代码签名证书、用的人又不多，就会被它拦一下，并不是查出了病毒。`start.cmd` 也可能这样。不放心的话，源码都在这个仓库里，可以自己看。
   - Linux / macOS：在 GitHub 页面点 **Code → Download ZIP** 解压；或者 `git clone https://github.com/lmmmp-17/course-helper.git`。GitHub 打不开就用 Gitee：`git clone https://gitee.com/lmmmp-17/course-helper.git`。
+
+#### 装 Node.js
+
+**Windows 最省事的办法**：直接双击 `网课助手.exe`。没装 Node.js 的话，它会问「现在用 winget 自动安装吗？」，点「是」：
+
+- 会弹出一个黑色窗口自动下载安装。Windows 问「你要允许此应用对你的设备进行更改吗？」时点「是」。
+- 装完黑窗口自己关掉，网课助手接着打开。
+- 双击 `start.cmd` 也会这样问，按 Y。
+- 它是从 Node.js 官网下载的，网络不好时会很慢。等太久就关掉黑窗口，按下面的办法手动装。
+
+**没问你、点了「否」，或者没装上**，就手动装，和装别的软件一样：
+
+1. 下载安装包，两个地址任选一个：
+   - 官网：<https://nodejs.org/zh-cn/download>，选「Windows 安装程序（.msi）」下载。
+   - 官网打不开或者很慢，就用国内镜像直接下：[node-v24.22.1-x64.msi](https://cdn.npmmirror.com/binaries/node/v24.22.1/node-v24.22.1-x64.msi)。这是长期支持版，够用。
+2. 双击下载好的 `.msi`，一路点「Next」：
+   - 许可协议那一页，先勾上「I accept the terms in the License Agreement」；
+   - 有一页叫「Tools for Native Modules」，那个勾**不用勾**；
+   - 最后点「Install」，Windows 问是否允许更改时点「是」，装完点「Finish」。
+3. 重新双击 `网课助手.exe` 就行，不用重启电脑。
+
+想确认装好了没有：按 Win+R，输入 `cmd` 回车，在弹出的黑窗口里输入 `node -v` 回车。显示 `v20` 或更大的数字就对了。提示版本太旧的，照上面装一遍新版，会直接盖掉旧的。
+
+**macOS**：在官网下载页选 macOS 安装程序（.pkg），双击照提示装；装过 Homebrew 的，也可以执行 `brew install node`。
+
+**Linux**：先执行 `node -v` 看一眼。没有或者低于 20 的，照官网下载页上给的命令装（页面上选 Linux，它会教你用 nvm）。注意 Ubuntu 24.04、Debian 12 软件源里的 nodejs 是 18，太旧了。
 
 ### 2. 打开控制台
 
@@ -91,6 +116,22 @@ fork 上游作者的工作依然给了我很大启发，在此一并感谢🙏�
 - 已经完成的跳过；**计分的测验不代做**，会跳过去接着找下一个视频。
 - 智慧树课中弹出的不计分小题会自动作答并关掉；雨课堂播放中弹出任何窗口都会停下来等你处理。
 
+### 5. 支持哪些网站
+
+点开课程后看一眼浏览器地址栏：域名和路径对得上下面这些，脚本才认得出来；对不上就会一直停在「请点开要学的课程」。
+
+| 平台 | 域名 | 认哪个页面 |
+| --- | --- | --- |
+| 学习通 | `chaoxing.com` 和它的子域名，常见的是 `mooc1.chaoxing.com` | 地址里带 `/mycourse/studentstudy` 的章节学习页 |
+| 长江雨课堂 | `yuketang.cn` 和它的子域名，实测的是 `changjiang.yuketang.cn` | 地址里带 `/ai-workspace/lms-graph/` 的学习空间 |
+| 智慧树 · 共享课 | `studyvideoh5.zhihuishu.com` | 播放页 |
+| 智慧树 · 新版共享课 | `studywisdomh5.zhihuishu.com` | 播放页（课中弹题要你自己答） |
+| 智慧树 · 融合课 | `fusioncourseh5.zhihuishu.com` | 播放页 |
+| 智慧树 · 融合共享课 | `wisdom-mooc.zhihuishu.com` | 地址以 `/study` 开头的播放页 |
+| 智慧树 · 翻转课 | `hike.zhihuishu.com` | 播放页（不自动答弹题） |
+
+不在表里的网站（比如中国大学 MOOC、学堂在线）不支持。
+
 ## 二、注意事项
 
 - **如果你同时要用电脑，推荐配合虚拟桌面食用**：把这些浏览器窗口挪到另一个桌面，自己在原来的桌面用电脑。Windows 上按 Win+Ctrl+D 新建桌面，Win+Ctrl+← / → 切换，Win+Tab 里可以把窗口拖到别的桌面。实测过的是 Linux 上的学习通、雨课堂和 Windows 上的学习通；智慧树和 macOS 还没实测。
@@ -112,11 +153,11 @@ fork 上游作者的工作依然给了我很大启发，在此一并感谢🙏�
 | 双击 `网课助手.exe` 或 `start.cmd` 后 Windows 提示"已保护你的电脑" | 点"更多信息"→"仍要运行"。从网上下载、没有数字签名的程序会这样 |
 | 窗口版提示缺少 WebView2 运行时 | 点「是」去下载安装（Windows 11 自带，少数 Windows 10 没有）；或者点「否」先用终端版 |
 | 窗口版提示「终端版的网课助手正在运行」 | 两个不能同时开，先在终端版里按 Q 退出 |
-| `没找到 Node.js` | 按提示装 Node.js 20 或更新，装完重新运行 |
+| `没找到 Node.js`，或者提示要装 Node.js | 照[「装 Node.js」](#装-nodejs)装好，再重新打开 |
 | `依赖安装失败` | 国内镜像和官方源都试过了还是没装上，检查网络后重新开始。npm 里配过自己的源的话，只会用那个源 |
 | `调试端口一直没打开` | 这个平台的专用浏览器之前被打开过、还没关。关掉它的所有窗口再开始 |
 | `…上开着的是 Chrome，不是你选的 Edge` | 之前用另一种浏览器跑过，那个专用窗口还开着。关掉它再开始 |
-| 智慧树点开课程后一直没开始 | 要进到能直接看到视频的**播放页**，课程首页、课程列表不算 |
+| 点开课程后一直没开始 | 要进到能直接看到视频的**播放页**，课程首页、课程列表不算；再对一下地址栏，是不是[支持的网站](#5-支持哪些网站) |
 | 平台名字是灰的 | 那个工具的目录不在了。重新下载完整的仓库 |
 
 各平台更细的说明在它们自己的 README 里：[学习通](xuexitong/README.md)、[雨课堂](yuketang/README.md)、[智慧树](autovisor/README.md)。
