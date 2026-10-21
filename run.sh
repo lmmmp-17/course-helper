@@ -101,10 +101,14 @@ ensure_uv() {
         return 0
     fi
     echo "[setup] 使用官方脚本安装 uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh || {
-        echo "[ERROR] uv 安装失败, 请手动安装后重试: $(uv_hint)" >&2
-        exit 1
-    }
+    if ! curl -LsSf https://astral.sh/uv/install.sh | sh; then
+        # 官方脚本从 GitHub 下载, 国内很多网络上很慢或者连不上
+        echo "[setup] 官方脚本没装上, 改从国内的 PyPI 镜像下载 uv..."
+        install_uv_from_mirror || {
+            echo "[ERROR] uv 安装失败, 请手动安装后重试: $(uv_hint)" >&2
+            exit 1
+        }
+    fi
     if [ -x "$HOME/.local/bin/uv" ]; then
         export PATH="$HOME/.local/bin:$PATH"
     elif [ -x "$HOME/.cargo/bin/uv" ]; then
@@ -114,6 +118,54 @@ ensure_uv() {
         echo "[ERROR] 未能找到 uv 可执行文件, 请手动安装后重试: $(uv_hint)" >&2
         exit 1
     }
+}
+
+# uv 也以 wheel 的形式发布在 PyPI 上, 里面带着 uv 可执行文件, 而 PyPI 在国内有镜像.
+# 取最新的、适合本机的 wheel, 校验 sha256 后把 uv、uvx 放进 ~/.local/bin
+# (和官方脚本装的位置一样). Windows 上的同一件事见 resources/install-uv.ps1
+install_uv_from_mirror() {
+    command -v python3 >/dev/null 2>&1 || return 1
+    python3 - "$HOME/.local/bin" <<'PY'
+import hashlib, io, os, platform, re, stat, sys, urllib.parse, urllib.request, zipfile
+
+bin_dir = sys.argv[1]
+machine = platform.machine().lower()
+arch = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
+if sys.platform == "darwin":
+    wanted = lambda tag: tag.startswith("macosx") and tag.endswith("arm64" if arch == "aarch64" else "x86_64")
+else:
+    wanted = lambda tag: "manylinux" in tag and tag.endswith(arch)
+
+for index in ("https://pypi.tuna.tsinghua.edu.cn/simple/uv/", "https://mirrors.aliyun.com/pypi/simple/uv/"):
+    try:
+        page = urllib.request.urlopen(index, timeout=30).read().decode("utf-8", "replace")
+        best = None
+        for href in re.findall(r'href="([^"]+)"', page):
+            m = re.search(r"/uv-(\d+)\.(\d+)\.(\d+)-py3-none-([^/#]+)\.whl#sha256=([0-9a-f]{64})$", href)
+            if m and wanted(m.group(4)):
+                version = tuple(int(x) for x in m.group(1, 2, 3))
+                if best is None or version > best[0]:
+                    best = (version, href, m.group(5))
+        if best is None:
+            raise RuntimeError("no wheel for this machine")
+        url = urllib.parse.urljoin(index, best[1].split("#")[0])
+        data = urllib.request.urlopen(url, timeout=600).read()
+        if hashlib.sha256(data).hexdigest() != best[2]:
+            raise RuntimeError("checksum mismatch")
+        os.makedirs(bin_dir, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(data)) as wheel:
+            for name in wheel.namelist():
+                if re.search(r"\.data/scripts/uvx?$", name):
+                    target = os.path.join(bin_dir, os.path.basename(name))
+                    with open(target, "wb") as out:
+                        out.write(wheel.read(name))
+                    os.chmod(target, os.stat(target).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        print("[setup] uv %s <- %s" % (".".join(map(str, best[0])), index))
+        sys.exit(0)
+    except Exception as exc:
+        print("[setup] 从 %s 没装上 uv: %s" % (index, exc))
+sys.exit(1)
+PY
 }
 
 uv_hint() {
@@ -143,7 +195,18 @@ deploy() {
         true|1|yes|on) extra="--extra captcha" ;;
     esac
     echo "[setup] 安装 Python 依赖 (uv sync $extra)..."
-    uv sync $extra
+    # 先走官方源; 不行再换国内镜像 (清华 PyPI 装依赖, npmmirror 装 Python).
+    # 不默认走镜像: 那样 uv 会把 uv.lock 里的下载地址改写成镜像的, git 工作区就脏了
+    # (版本不变, 实测). 用户自己设过镜像变量的话不换.
+    if ! uv sync $extra; then
+        if [ -n "${UV_DEFAULT_INDEX:-}${UV_PYTHON_INSTALL_MIRROR:-}" ]; then
+            exit 1
+        fi
+        echo "[setup] 官方源没装上, 改用国内镜像 (清华 PyPI、npmmirror) 再试一次..."
+        export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+        export UV_PYTHON_INSTALL_MIRROR=https://registry.npmmirror.com/-/binary/python-build-standalone
+        uv sync $extra
+    fi
 
     case "$driver" in
         chromium)
@@ -177,6 +240,13 @@ if [ ! -f "$config_file" ] && [ "$config_file" = "config.$PLATFORM.ini" ] && [ -
     cp "config.$PLATFORM.ini.example" "$config_file"
     chmod 600 "$config_file"
     echo "[setup] 已从模板生成配置文件 $config_file，想改设置可以用文本编辑器打开它"
+fi
+
+# 上次是靠国内镜像装上的 (uv.lock 里记着镜像的地址): 接着用镜像.
+# 不然下面的 uv run 会把 uv.lock 改回官方源再解析一遍, 连不上官方源时直接失败
+if [ -z "${UV_DEFAULT_INDEX:-}${UV_PYTHON_INSTALL_MIRROR:-}" ] && grep -q "pypi.tuna.tsinghua.edu.cn" uv.lock 2>/dev/null; then
+    export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+    export UV_PYTHON_INSTALL_MIRROR=https://registry.npmmirror.com/-/binary/python-build-standalone
 fi
 
 if [ "$force_setup" = true ]; then

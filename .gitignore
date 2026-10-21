@@ -6,6 +6,7 @@ resources/*
 !data/mirrors.json
 !resources/zhs.ico
 !resources/run-messages.txt
+!resources/install-uv.ps1
 !resources/markdown/
 .obsidian/
 .idea/

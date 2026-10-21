@@ -16,7 +16,7 @@ fork 自 [CXRunfree/Autovisor](https://github.com/CXRunfree/Autovisor)，这个�
 
 - **浏览器**：Windows 默认用 Edge，Linux / macOS 默认用 Google Chrome。
 - **下载这个仓库**：在 GitHub 页面点 **Code → Download ZIP** 解压；或者 `git clone https://github.com/lmmmp-17/Autovisor.git`。
-- **不需要自己装 Python**。入口脚本会用 [uv](https://docs.astral.sh/uv/) 准备好 Python 3.13 和全部依赖；没有 uv 的话：Linux / macOS 会自动装；Windows 上双击 run.cmd 会问你要不要用 winget 装，从网课助手启动时直接装（那里没法回答问题）。
+- **不需要自己装 Python**。入口脚本会用 [uv](https://docs.astral.sh/uv/) 准备好 Python 3.13 和全部依赖；没有 uv 的话：Linux / macOS 会自动装；Windows 上先从清华的 PyPI 镜像下载 uv，不行再用 winget，双击 run.cmd 时会先问你，从网课助手启动时直接装（那里没法回答问题）。Windows 上 Python 和依赖默认也从国内镜像下载（清华 PyPI、npmmirror），装不上再用官方源试一次。
 
 ### 2. 运行
 
@@ -198,6 +198,21 @@ Linux / macOS 可以用 `./run.sh --setup` 强制重建环境。Linux 用 `Chrom
 - 失焦靠焦点模拟兜住，但 `document.visibilityState` 没有办法模拟：最小化后页面变成 `hidden`，视频随之暂停，弹题检测也跟着停。
 - Windows 上还多一种情况：浏览器会追踪窗口有没有被盖住。实测（Chrome 155 / Win11）窗口被别的窗口完全盖住后 1 秒内页面就变 `hidden`，视频被直接暂停。启动参数 `--disable-backgrounding-occluded-windows` 能让它被盖住时保持 `visible`，但兜不住最小化。
 - 普通模式由 Playwright 启动浏览器，它默认就带这一项（`tests/test_browser.py` 里有测试防止它被去掉）；连接已有 Chrome 时程序管不到启动参数，所以要在手动命令里自己带。
+
+### 第一次运行要下载的东西，从哪儿下
+
+用这个工具的人大多在国内，GitHub、PyPI 从很多网络上很慢或者连不上，所以准备环境时会用国内镜像。镜像都装不上时，会退回官方源再试一次。
+
+| 要下载的 | 官方来源 | 国内镜像 |
+| --- | --- | --- |
+| uv 本身 | GitHub（winget、官方安装脚本都从这里下） | 清华 / 阿里的 PyPI 镜像。uv 在 PyPI 上发布的 wheel 里带着 uv 可执行文件，取出来放进 `~/.local/bin`，和官方安装脚本装的位置一样 |
+| Python | uv 的 Python 构建（python-build-standalone） | npmmirror（`UV_PYTHON_INSTALL_MIRROR`） |
+| 依赖包 | PyPI | 清华 PyPI（`UV_DEFAULT_INDEX`） |
+
+- **Windows（run.cmd）**：默认先走镜像，镜像失败再走官方源。用的都是解压出来的压缩包，uv 把 `uv.lock` 里的下载地址改写成镜像的也不碍事；包的版本不变，实测过。uv 本身由 `resources/install-uv.ps1` 从 PyPI 镜像安装，不行再用 winget。
+- **Linux / macOS（run.sh）**：先走官方源，失败了再走镜像。这边多半是 git 克隆下来的，默认走镜像的话，`uv.lock` 会被改写，git 工作区就脏了。一旦用过镜像，后面也一直用镜像，不然 `uv run` 会把 `uv.lock` 改回去。
+- 你自己设过 `UV_DEFAULT_INDEX` 或 `UV_PYTHON_INSTALL_MIRROR` 的话，以你的设置为准，不会自动换。
+- `driver = chromium` 时，Playwright 自带的 Chromium 仍然从官方 CDN 下载，没有走镜像。默认用系统里装的 Chrome / Edge，不需要这一步。
 
 ### 降低自动化特征
 
