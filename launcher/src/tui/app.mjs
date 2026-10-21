@@ -53,6 +53,7 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
         open: false,
         focus: 0,
         invalid: new Set(),
+        problem: '',
     });
 
     const saved = settings?.read().picked;
@@ -127,6 +128,7 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
         const form = formOf(tool);
         if (run.run || run.starting) return;
         run.error = '';
+        form.problem = '';
         /* 数字框只收整数，和窗口版一样先在这边拦下 */
         const bad = tool.options.filter((option) => {
             const value = String(form.values[keyOf(option)] ?? '').trim();
@@ -135,7 +137,7 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
         form.invalid = new Set(bad.map((option) => option.label));
         if (bad.length) {
             form.open = true;
-            run.error = `${bad.map((option) => option.label).join('、')} 要填整数`;
+            form.problem = `${bad.map((option) => option.label).join('、')} 要填整数`;
             onChange();
             return;
         }
@@ -168,6 +170,12 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
         resolveDone();
     }
 
+    /* 改过填错的那一项，红字提示就该消失，不用等下一次 Enter */
+    function touched(option, form) {
+        form.invalid.delete(option.label);
+        if (!form.invalid.size) form.problem = '';
+    }
+
     function editField(option, key, form) {
         const id = keyOf(option);
         const value = form.values[id];
@@ -184,11 +192,11 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
         }
         /* 文字、数字、密码：在末尾输入和删除 */
         const text = String(value ?? '');
-        if (key.name === 'backspace') { form.values[id] = [...text].slice(0, -1).join(''); form.invalid.delete(option.label); return true; }
+        if (key.name === 'backspace') { form.values[id] = [...text].slice(0, -1).join(''); touched(option, form); return true; }
         const char = key.name === 'space' ? ' ' : key.name === 'char' ? key.char : null;
         if (char === null) return false;
         form.values[id] = text + char;
-        form.invalid.delete(option.label);
+        touched(option, form);
         return true;
     }
 
@@ -353,14 +361,16 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
                     rows.push([...margin('设置'), { text }]);
                     if (mute) rows.push(...fieldRows(tool, mute, form, false, width, false));
                 }
-                if (run.error) rows.push([...indent(), { text: run.error, style: STYLE.penStrong }]);
+                const problem = form.problem || run.error;
+                if (problem) rows.push([...indent(), { text: problem, style: STYLE.penStrong }]);
                 rows.push([]);
                 const label = run.starting ? ' 正在启动... ' : ` Enter ${run.exit ? '再开始' : '开始'}：${tool.name} `;
                 rows.push([...indent(), { text: '  ' }, { text: label, style: run.starting ? STYLE.soft : STYLE.button }]);
             }
         }
 
-        /* 状态那一行：页边写已运行 / 停在 / 结束于 */
+        /* 状态那一行：页边写已运行 / 停在 / 结束。窗口版写「结束于」，
+         * 这里页边只有 14 列，「结束于 13:17:38」放不下 */
         if (run.run) {
             rows.push([]);
             rows.push([...margin(`已运行 ${since(run.run.startedAt, now())}`), { text: ` ${run.toolStatus || run.lastLine || '正在启动...'} `, style: STYLE.mark }]);
@@ -368,7 +378,7 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
         } else if (run.exit) {
             const { text, failed } = exitText(run.exit);
             rows.push([]);
-            rows.push([...margin(`${failed ? '停在' : '结束于'} ${clock(run.exit.at)}`), { text, style: failed ? STYLE.penStrong : STYLE.strong }]);
+            rows.push([...margin(`${failed ? '停在' : '结束'} ${clock(run.exit.at)}`), { text, style: failed ? STYLE.penStrong : STYLE.strong }]);
         }
 
         /* 记录占满剩下的行；最后两行留给分隔线和按键说明 */
@@ -396,7 +406,20 @@ export function createApp({ tools, runner, settings = null, now = Date.now, onCh
         return rows;
     }
 
-    return { handleKey, view, done, state, runs: runOf, forms: formOf };
+    /* 终端窗口（或标签页）的标题，和窗口版的标题栏说法一样 */
+    function title() {
+        const live = running();
+        const failed = tools.find((tool) => {
+            const run = runOf(tool.id);
+            return !run.run && run.exit && !run.seen && exitText(run.exit).failed;
+        });
+        if (failed) return `✕ ${failed.name} 停了${live.length ? `（还有 ${live.length} 个在跑）` : ''}`;
+        if (live.length === 1) return `▶ ${live[0].name} ${since(runOf(live[0].id).run.startedAt, now())}`;
+        if (live.length > 1) return `▶ ${live.map((tool) => tool.name).join('、')}`;
+        return '网课助手';
+    }
+
+    return { handleKey, view, title, done, state, runs: runOf, forms: formOf };
 }
 
 /* 真正跑在终端里：画面每秒刷新一次（已运行时长），有变化时尽快重画 */
@@ -406,6 +429,7 @@ export async function runTui({ root, runner, settings, platform = process.platfo
     const draw = () => {
         pending = null;
         screen.draw(app.view(screen.width, screen.height));
+        screen.title(app.title());
     };
     const schedule = () => { if (!pending) pending = setTimeout(draw, 30); };
     const app = createApp({ tools, runner, settings, onChange: schedule });

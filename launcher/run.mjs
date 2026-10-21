@@ -118,7 +118,9 @@ async function main() {
             if (leaving) process.exit(1);
             leaving = true;
             const live = runner.running();
-            say(live.length ? `\n正在停止 ${live.length} 个在跑的工具，等它们收尾…（再按一次 Ctrl+C 直接退出）` : '\n正在退出…');
+            /* 窗口版的后端没有终端，这句只进 backend.log，不该教人按 Ctrl+C */
+            const again = options.handshake ? '' : '（再按一次 Ctrl+C 直接退出）';
+            say(live.length ? `\n正在停止 ${live.length} 个在跑的工具，等它们收尾…${again}` : '\n正在退出…');
             runner.stop();
             /* 等工具收完尾再走：后端先退的话，工具收尾时往已经关掉的管道里写日志会出错 */
             await runner.whenIdle(STOP_GRACE_MS + 2000);

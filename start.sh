@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 网课助手的入口（Linux / macOS）。
-# 会开一个本地控制台，并用你的默认浏览器打开它；三个平台都在里面启动。
+# 打开终端版的网课助手，三个平台都在里面启动。
 set -euo pipefail
 cd "$(dirname "$0")"
 

@@ -127,7 +127,9 @@ test('终端版：设置默认收起成一行；M 切静音，C 展开，Esc 收
     press('enter');
     assert.match(screen(), /最多播几节 要填整数/);
     assert.equal(calls.length, 0, '填错了不启动');
-    press('backspace', 'backspace');
+    press('backspace');
+    assert.doesNotMatch(screen(), /要填整数/, '改了填错的那一项，红字就消失');
+    press('backspace');
     press('tab', 'right');         /* 倍速：最高 → 不改 */
     assert.match(screen(), /倍速 {2}> \( \) 最高 {2}\(o\) 不改/);
     press('escape');
@@ -136,8 +138,10 @@ test('终端版：设置默认收起成一行；M 切静音，C 展开，Esc 收
 
 test('终端版：三个平台同时跑，1 2 3 切换、S 停止、装依赖的提醒、出错标记、按平台分开的记录', async (t) => {
     const { app, screen, press, started, children, calls, advance, settings } = await setup(t);
+    assert.equal(app.title(), '网课助手');
     press('enter');                /* 学习通 */
     await started(1);
+    assert.equal(app.title(), '▶ 学习通 0:00', '终端标题和窗口版标题栏一样');
     let view = screen();
     assert.match(view, /这次的设置 {2}倍速 最高，静音，浏览器 自动/);
     assert.match(view, /1 2 3 切换平台 {4}S 停止：学习通/);
@@ -159,6 +163,7 @@ test('终端版：三个平台同时跑，1 2 3 切换、S 停止、装依赖的
     press('3', 'enter');           /* 智慧树 */
     await started(3);
     assert.deepEqual(calls[2].args, ['--config', 'config.linux.ini', '--wait-course']);
+    assert.equal(app.title(), '▶ 学习通、长江雨课堂、智慧树');
     assert.equal(settings.read().picked, 'autovisor', '切平台记下来，两个入口共用');
 
     /* 雨课堂在后面出错退出：没切过去看的，平台名旁边标「停了」 */
@@ -167,6 +172,7 @@ test('终端版：三个平台同时跑，1 2 3 切换、S 停止、装依赖的
     view = screen().split('\n')[0];
     assert.match(view, /学习通 >1:05/);
     assert.match(view, /长江雨课堂 停了/);
+    assert.equal(app.title(), '✕ 长江雨课堂 停了（还有 2 个在跑）');
     assert.doesNotMatch(screen(), /函数的极限/, '记录按平台分开');
 
     press('2');                    /* 切到雨课堂：看过了，标记消失 */
@@ -181,6 +187,8 @@ test('终端版：三个平台同时跑，1 2 3 切换、S 停止、装依赖的
     assert.equal(children.xuexitong.stdinEnded, true);
     assert.match(screen(), /正在停止\.\.\.一般几秒，最多 8 秒/);
     assert.equal(app.runs('autovisor').run !== null, true, '别的平台不受影响');
+    children.xuexitong.emit('close', 0, null);
+    assert.match(screen(), /^ 结束 \d\d:\d\d:\d\d {2}学习通 已停止/m, '页边放得下，不越过 14 列');
 });
 
 test('终端版：有平台在跑时退出要确认；确认后停掉全部、等收尾', async (t) => {

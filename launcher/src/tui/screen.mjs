@@ -76,15 +76,17 @@ export function openScreen({ input = process.stdin, output = process.stdout } = 
     let closed = false;
     const write = (text) => { if (!closed) output.write(text); };
 
-    /* 备用屏幕、藏光标、关自动换行（超出右边的直接截掉，不会把下一行挤乱） */
-    write(`${ESC}?1049h${ESC}?25l${ESC}?7l${ESC}2J`);
+    /* 先存下原来的窗口标题（xterm 一类支持，不支持的终端会忽略），
+     * 再进备用屏幕、藏光标、关自动换行（超出右边的直接截掉，不会把下一行挤乱） */
+    write(`${ESC}22;0t${ESC}?1049h${ESC}?25l${ESC}?7l${ESC}2J`);
+    let shownTitle = null;
     if (input.isTTY) input.setRawMode(true);
     input.resume();
     input.setEncoding?.('utf8');
 
     function close() {
         if (closed) return;
-        output.write(`${RESET}${ESC}?7h${ESC}?25h${ESC}?1049l`);
+        output.write(`${RESET}${ESC}?7h${ESC}?25h${ESC}?1049l${ESC}23;0t`);
         closed = true;
         if (input.isTTY) input.setRawMode(false);
         input.pause();
@@ -112,6 +114,13 @@ export function openScreen({ input = process.stdin, output = process.stdout } = 
                 out += `${ESC}${i + 1};1H${renderRow(rows[i] || [], this.width)}${ESC}K`;
             }
             write(out);
+        },
+        /* 窗口标题：变了才写。控制字符去掉，免得把转义序列提前截断 */
+        title(text) {
+            const clean = String(text).replace(/[\x00-\x1f\x7f]/g, '');
+            if (clean === shownTitle) return;
+            shownTitle = clean;
+            write(`\x1b]0;${clean}\x07`);
         },
         close() {
             close();

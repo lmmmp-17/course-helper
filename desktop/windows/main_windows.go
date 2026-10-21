@@ -27,6 +27,7 @@ import (
 	webview2 "github.com/jchv/go-webview2"
 	"github.com/jchv/go-webview2/webviewloader"
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 
 	"github.com/lmmmp-17/course-helper/desktop/windows/internal/shell"
 )
@@ -54,12 +55,30 @@ const (
 	mbIconWarning = 0x00000030
 	mbIconInfo    = 0x00000040
 	mbDefButton2  = 0x00000100
+	mbSetFg       = 0x00010000
+	mbTopmost     = 0x00040000
 	idOK          = 1
 	idYes         = 6
 	idNo          = 7
 
-	wmClose   = 0x0010
-	swRestore = 9
+	wmClose         = 0x0010
+	wmSettingChange = 0x001A
+	wmSetIcon       = 0x0080
+	wmSysCommand    = 0x0112
+	scClose         = 0xF060
+	swRestore       = 9
+
+	iconSmall  = 0
+	iconBig    = 1
+	imageIcon  = 1
+	smCxIcon   = 11
+	smCyIcon   = 12
+	smCxSmIcon = 49
+	smCySmIcon = 50
+
+	// DWMWA_USE_IMMERSIVE_DARK_MODE：Windows 10 20H1 起是 20，更早的版本是 19
+	dwmaDarkMode       = 20
+	dwmaDarkModeBefore = 19
 )
 
 var (
@@ -73,12 +92,22 @@ var (
 	procIsIconic            = user32.NewProc("IsIconic")
 	procGetDpiForSystem     = user32.NewProc("GetDpiForSystem")
 	procPostMessageW        = user32.NewProc("PostMessageW")
+	procSendMessageW        = user32.NewProc("SendMessageW")
+	procLoadImageW          = user32.NewProc("LoadImageW")
+	procGetSystemMetrics    = user32.NewProc("GetSystemMetrics")
+
+	procDwmSetWindowAttribute = windows.NewLazySystemDLL("dwmapi.dll").NewProc("DwmSetWindowAttribute")
 
 	// GWLP_WNDPROC = -4
 	gwlpWndProc = ^uintptr(3)
 )
 
+// 没有主窗口时弹的框（缺 Node、和终端版互斥之类）要自己到最前面：
+// 不然会躲在刚才那个终端窗口后面，看起来像双击了没反应
 func messageBox(owner uintptr, text string, flags uintptr) int {
+	if owner == 0 {
+		flags |= mbSetFg | mbTopmost
+	}
 	t, _ := windows.UTF16PtrFromString(text)
 	c, _ := windows.UTF16PtrFromString(appName)
 	r, _, _ := procMessageBoxW.Call(owner, uintptr(unsafe.Pointer(t)), uintptr(unsafe.Pointer(c)), flags)
@@ -328,7 +357,11 @@ func runWindow(consoleURL string) {
 	w.SetSize(shell.Scale(minWidth, dpi), shell.Scale(minHeight, dpi), webview2.HintMin)
 
 	hwnd := uintptr(w.Window())
-	_ = os.WriteFile(filepath.Join(dataDir(), "window.hwnd"), []byte(strconv.FormatUint(uint64(hwnd), 10)), 0o644)
+	hwndFile := filepath.Join(dataDir(), "window.hwnd")
+	_ = os.WriteFile(hwndFile, []byte(strconv.FormatUint(uint64(hwnd), 10)), 0o644)
+	defer os.Remove(hwndFile)
+	setIcons(hwnd)
+	applyTitleBarTheme(hwnd)
 	installCloseGuard(w, hwnd, consoleURL)
 
 	_ = w.Bind("courseHelperTitle", func(title string) {
@@ -339,6 +372,48 @@ func runWindow(consoleURL string) {
 	w.Init(titleScript)
 	w.Navigate(shell.WithShell(consoleURL))
 	w.Run()
+}
+
+// 窗口类上只有一个 32 像素的图标（go-webview2 注册窗口类时给的），标题栏上的小图标是它缩出来的，
+// 窗口本身也没有图标（WM_GETICON 拿到 0）。按系统要的两种尺寸各从资源里取一张设上。
+func setIcons(hwnd uintptr) {
+	var module windows.Handle
+	_ = windows.GetModuleHandleEx(0, nil, &module)
+	for _, icon := range []struct{ which, cx, cy uintptr }{{iconBig, smCxIcon, smCyIcon}, {iconSmall, smCxSmIcon, smCySmIcon}} {
+		cx, _, _ := procGetSystemMetrics.Call(icon.cx)
+		cy, _, _ := procGetSystemMetrics.Call(icon.cy)
+		handle, _, _ := procLoadImageW.Call(uintptr(module), 1, imageIcon, cx, cy, 0)
+		if handle != 0 {
+			_, _, _ = procSendMessageW.Call(hwnd, wmSetIcon, icon.which, handle)
+		}
+	}
+}
+
+// 标题栏跟着系统的深浅色走。页面自己已经跟着走了，不改的话深色页面顶着一条白标题栏。
+func applyTitleBarTheme(hwnd uintptr) {
+	if procDwmSetWindowAttribute.Find() != nil {
+		return
+	}
+	var dark int32
+	if systemDark() {
+		dark = 1
+	}
+	for _, attr := range []uintptr{dwmaDarkMode, dwmaDarkModeBefore} {
+		if r, _, _ := procDwmSetWindowAttribute.Call(hwnd, attr, uintptr(unsafe.Pointer(&dark)), 4); r == 0 {
+			return
+		}
+	}
+}
+
+// 「设置 → 个性化 → 颜色 → 选择默认应用模式」
+func systemDark() bool {
+	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer key.Close()
+	light, _, err := key.GetIntegerValue("AppsUseLightTheme")
+	return err == nil && light == 0
 }
 
 // 关窗口时还有平台在跑：先问一句。
@@ -358,20 +433,31 @@ var (
 	guardProc    = windows.NewCallback(closeGuard)
 )
 
+// 除了 WM_CLOSE，也直接截下 SC_CLOSE（任务栏缩略图、右键菜单里的「关闭窗口」发的是它），
+// 不指望它一定会被默认处理转成 WM_CLOSE。
 func closeGuard(hwnd, msg, wp, lp uintptr) uintptr {
-	if msg == wmClose && !closeAllowed.Load() {
-		seq := askSeq.Add(1)
-		guardView.Eval("window.courseHelperAskClose && window.courseHelperAskClose()")
-		go func() {
-			time.Sleep(1500 * time.Millisecond)
-			if ackedSeq.Load() < seq {
-				guardView.Dispatch(nativeConfirmClose)
-			}
-		}()
+	closing := msg == wmClose || (msg == wmSysCommand && wp&0xFFF0 == scClose)
+	if closing && !closeAllowed.Load() {
+		askToClose()
 		return 0
+	}
+	if msg == wmSettingChange && lp != 0 && windows.UTF16PtrToString((*uint16)(unsafe.Pointer(lp))) == "ImmersiveColorSet" {
+		/* 用户切了深浅色 */
+		applyTitleBarTheme(hwnd)
 	}
 	r, _, _ := procCallWindowProcW.Call(previousProc, hwnd, msg, wp, lp)
 	return r
+}
+
+func askToClose() {
+	seq := askSeq.Add(1)
+	guardView.Eval("window.courseHelperAskClose && window.courseHelperAskClose()")
+	go func() {
+		time.Sleep(1500 * time.Millisecond)
+		if ackedSeq.Load() < seq {
+			guardView.Dispatch(nativeConfirmClose)
+		}
+	}()
 }
 
 func allowClose() {
