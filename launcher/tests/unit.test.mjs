@@ -9,6 +9,7 @@ import { buildArgs, applyConfig, readConfig, missingRequired } from '../src/args
 import { openCommand } from '../src/open.mjs';
 import { byId, entryFor, describe } from '../src/tools.mjs';
 import { createRunner, windowsCommand } from '../src/runner.mjs';
+import { phaseAfter } from '../src/present.mjs';
 
 const xxt = byId('xuexitong');
 const zhs = byId('autovisor');
@@ -477,4 +478,9 @@ test('跑进程：智慧树入口里 uv 的进度走 stderr，但不算警告；
     assert.equal(err['Checked 18 packages in 1ms'], false);
     assert.equal(err[' + numpy==2.3.4'], false);
     assert.equal(err['Traceback (most recent call last):'], true);
+});
+
+test('第一次装依赖的提醒：智慧树在网课助手里自动装 uv 时也算', () => {
+    assert.equal(phaseAfter('', '正在用 winget 安装 uv，第一次要等一两分钟...'), 'prepare');
+    assert.equal(phaseAfter('prepare', '程序启动中...'), '');
 });

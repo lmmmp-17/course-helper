@@ -39,7 +39,7 @@ fork 上游作者的工作依然给了我很大启发，在此一并感谢🙏�
 - **Node.js 20 或更新**：
   - Windows：没装也没关系，第一次运行 `start.cmd` 时会问你要不要用 winget 自动装。
   - macOS：`brew install node`；Linux：用系统的包管理器装 `nodejs`。也可以到 [nodejs.org](https://nodejs.org/) 下载 LTS 版。
-- **智慧树不用自己装 Python**：第一次跑它时会自动准备好（Windows 上会问你要不要用 winget 装 uv）。
+- **智慧树不用自己装 Python**：第一次跑它时会自动准备好。Windows 上要先有 uv，没有的话，在网课助手里点开始就会直接用 winget 装（要等一两分钟）；单独双击 `autovisor\run.cmd` 时会先问你。
 - **下载**：
   - Windows：到 [GitHub Releases](https://github.com/lmmmp-17/course-helper/releases) 或 [Gitee 发行版](https://gitee.com/lmmmp-17/course-helper/releases) 下载最新的 **`course-helper-windows.zip`**，解压。三个工具和窗口版程序都在里面。
     解压出来有好几个文件夹，**只需要双击 `网课助手.exe`**（一般在最下面），学习通、长江雨课堂、智慧树都在它里面选。别的文件夹是它要用的程序，不用点开，也别删。压缩包里的 `使用说明.txt` 写的也是这些。
