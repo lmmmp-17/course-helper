@@ -11,6 +11,7 @@
 import { SEL, KIND } from './selectors.mjs';
 import { human, sleep, sleepFor } from './human.mjs';
 import { bar, clip, formatDuration, formatTime } from './display.mjs';
+import { keyHint } from './stop-signal.mjs';
 
 /* 目录按页面顺序读成一串条目：学习项，以及折叠着的知识点节点。
  *
@@ -199,7 +200,7 @@ export class LearningRunner {
         this.log.say(`目录：${summary}（已完成/总数）${folded ? `，另有 ${folded} 个折叠的知识点` : ''}`);
         this.currentTitle = current ? current.title : '';
         this.log.say(`当前：${current ? `${current.kind}「${current.title}」` : '未定位'}`);
-        this.log.say('开始了。可以把浏览器窗口放到后面去，但别最小化。按 Ctrl+C 停止。');
+        this.log.say(`开始了。可以把浏览器窗口放到后面去，但别最小化。${keyHint('按 Ctrl+C 停止。')}`);
 
         while (!this.stopped) {
             const now = (await this.readCatalogSettled() || []).find((entry) => entry.type === 'leaf' && entry.active);
