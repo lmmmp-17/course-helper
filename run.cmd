@@ -103,6 +103,10 @@ if errorlevel 2 goto :manual_uv
 rem First from a PyPI mirror (see resources\install-uv.ps1): winget and uv's
 rem own installer both download from GitHub.
 call :say installing-uv
+rem Started from PowerShell 7 (say in Windows Terminal) through the launcher,
+rem PSModulePath lists PowerShell 7's modules first and Windows PowerShell 5.1
+rem then loads the wrong ones. Emptied, 5.1 builds its own default.
+set "PSModulePath="
 powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0resources\install-uv.ps1"
 where uv >nul 2>nul
 if not errorlevel 1 exit /b 0
