@@ -448,3 +448,20 @@ test('浏览器：智慧树写进 [browser-option] driver，默认值跟着平�
     /* GUI.py 存过的是小写 edge；界面上的单选值是 Edge，要对得上才会选中 */
     assert.equal(readConfig('[browser-option]\ndriver = edge\n', zhs)['browser-option.driver'], 'Edge');
 });
+
+test('Windows 入口：仓库里所有 .cmd 只有 ASCII；根目录 start.cmd 用到的提示都在 start-messages.txt 里', async () => {
+    const { readFileSync } = await import('node:fs');
+    const repo = new URL('../../', import.meta.url);
+    /* 控制台是 UTF-8 时，cmd 会读错含多字节字符的批处理：按行的位置把中文行截断，
+     * 后半截当成命令执行（pc 在 Windows 11 上实测，窗口版的记录里也看得到） */
+    for (const file of ['start.cmd', 'xuexitong/start.cmd', 'yuketang/start.cmd', 'autovisor/run.cmd']) {
+        assert.ok(/^[\x00-\x7f]*$/.test(readFileSync(new URL(file, repo), 'utf8')), `${file} 里不能有非 ASCII 字符`);
+    }
+    const cmd = readFileSync(new URL('start.cmd', repo), 'utf8');
+    const raw = readFileSync(new URL('launcher/start-messages.txt', repo));
+    assert.notDeepEqual([...raw.subarray(0, 3)], [0xef, 0xbb, 0xbf], '不能带 BOM，不然第一行的键认不出来');
+    const keys = new Set(raw.toString('utf8').split(/\r?\n/).filter((line) => /^[\w-]+=/.test(line)).map((line) => line.split('=')[0]));
+    const used = [...cmd.matchAll(/call :say ([\w-]+)/g)].map((match) => match[1]);
+    assert.ok(used.length >= 5);
+    for (const key of used) assert.ok(keys.has(key), `start-messages.txt 里缺 ${key}`);
+});

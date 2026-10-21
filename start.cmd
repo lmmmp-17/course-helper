@@ -1,19 +1,23 @@
 @echo off
 setlocal
 rem ---------------------------------------------------------------------------
-rem Everything above :main must stay ASCII. cmd reads a batch file line by line
-rem in the console's code page, and switching to UTF-8 halfway shifts the lines
-rem that follow (on a GBK console the Chinese comments below were run as
-rem commands). So when the console is not UTF-8 yet, switch it and read this
-rem file again from the top with "call", which then reads it all in UTF-8.
-rem "call" keeps it in the same cmd: running it in a second cmd made Ctrl+C
-rem ask "Terminate batch job (Y/N)?" twice, once for each cmd.
+rem Entry point of course-helper on Windows (the terminal version; the window
+rem version is the .exe next to it): double-click it. All three platforms are
+rem started from inside.
 rem
-rem The code page is left at UTF-8 afterwards. On current Windows every chcp
-rem clears the screen, so switching back wiped whatever the run had printed,
-rem error messages included. A double-clicked window closes right after anyway.
+rem This file must stay ASCII. With the console on UTF-8, cmd misreads batch
+rem files that contain multi-byte characters: depending on where such a line
+rem sits, it cuts the line and runs the second half as a command (seen on
+rem Windows 11, in a double-clicked window and in the launcher's log alike).
+rem The Chinese text people see lives in launcher\start-messages.txt (UTF-8) and
+rem is printed by :say.
+rem
+rem The console is switched to UTF-8 so that this text and the output of
+rem Node / Python come out right, also through the launcher's pipes. It is not
+rem switched back: on current Windows every chcp clears the screen, which wiped
+rem whatever the run had printed, error messages included.
 rem ---------------------------------------------------------------------------
-if "%COURSE_CMD_SELF%"=="%~f0" goto :inner
+set "MESSAGES=%~dp0launcher\start-messages.txt"
 rem Pause at the end only when double-clicked, so an error doesn't vanish with
 rem the window. Never under the launcher (COURSE_UI=1): its stdin is a pipe
 rem that stays open, so pause would wait forever and the run would never end.
@@ -21,15 +25,12 @@ set "PAUSE_AT_END="
 if "%COURSE_UI%"=="1" goto :no_pause
 echo %cmdcmdline% | findstr /i /c:"%~nx0" >nul && set "PAUSE_AT_END=1"
 :no_pause
+rem Switch only when needed: under the terminal UI the tools share its console,
+rem which is already UTF-8, and a needless chcp could clear its screen.
 for /f "tokens=2 delims=:." %%c in ('chcp') do set "CP=%%c"
 set "CP=%CP: =%"
-if "%CP%"=="65001" goto :inner
-chcp 65001 >nul
-set "COURSE_CMD_SELF=%~f0"
-call "%~f0" %*
-exit /b %errorlevel%
+if not "%CP%"=="65001" chcp 65001 >nul
 
-:inner
 call :main %*
 set "CODE=%errorlevel%"
 rem The terminal UI draws on its own screen: after a normal quit there is
@@ -38,8 +39,6 @@ if defined PAUSE_AT_END if not "%CODE%"=="0" call :wait_close
 exit /b %CODE%
 
 :main
-rem 网课助手的入口（Windows）：双击运行即可。
-rem 打开终端版的网课助手（窗口版是同一目录下的 网课助手.exe），三个平台都在里面启动。
 cd /d "%~dp0"
 
 where node >nul 2>nul
@@ -55,20 +54,21 @@ set "CODE=%errorlevel%"
 goto :end
 
 :install_node
-echo 没找到 Node.js（需要 20 或更新）。
+call :say no-node
 where winget >nul 2>nul
 if errorlevel 1 goto :manual_node
-choice /c YN /m "现在用 winget 自动安装 Node.js LTS 吗"
+call :say ask-winget
+choice /c YN
 if errorlevel 2 goto :manual_node
 winget install --id OpenJS.NodeJS.LTS -e --accept-source-agreements --accept-package-agreements
 set "PATH=%ProgramFiles%\nodejs;%PATH%"
 exit /b 0
 :manual_node
-echo 请到 https://nodejs.org 下载 LTS 版安装，装完重新运行 start.cmd。
+call :say manual-node
 exit /b 1
 
 :old_node
-echo [错误] Node.js 版本太旧（当前 %NODE_MAJOR%，需要 20 或更新）。
+call :say old-node
 goto :fail
 
 :fail
@@ -76,10 +76,20 @@ set "CODE=1"
 :end
 exit /b %CODE%
 
-rem 双击运行时停在这里，不然报错和结束总结会跟着窗口一起消失。
-rem 不用 pause 自带的那句：代码页是 65001 时它是英文。
+rem Print the line "<key>=<text>" of the messages file. "call echo" expands the
+rem %VARIABLES% inside the text.
+:say
+if not exist "%MESSAGES%" (
+    echo %~1
+    exit /b 0
+)
+for /f "usebackq tokens=1,* delims==" %%a in (`findstr /b /c:"%~1=" "%MESSAGES%"`) do call echo %%b
+exit /b 0
+
+rem Double-clicked: stop here, or errors and the closing summary vanish with the
+rem window. Our own line instead of pause's, which is English on code page 65001.
 :wait_close
 echo.
-echo 按任意键关闭这个窗口...
+call :say press-any-key
 pause >nul
 exit /b 0
