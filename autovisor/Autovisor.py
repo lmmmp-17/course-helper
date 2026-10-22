@@ -283,7 +283,7 @@ async def main(config, wait_course: bool = False) -> bool:
                     ),
                     asyncio.create_task(video_optimize(page, config)),
                     asyncio.create_task(skip_questions(page, event_loop_answer)),
-                    asyncio.create_task(play_video(page, playback_enabled)),
+                    asyncio.create_task(play_video(page, playback_enabled, config.soundOff)),
                 ]
             )
             logger.event(

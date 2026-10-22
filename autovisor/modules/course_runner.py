@@ -1,17 +1,19 @@
+import asyncio
 import time
 from enum import Enum
 
-from playwright.async_api import Page, TimeoutError
+from playwright.async_api import Locator, Page, TimeoutError
 
 from modules.course_playback import elapsed_minutes, learn_lesson, review_lesson
 from modules.lesson_navigation import (
     CatalogSelectors,
     detect_catalog,
+    has_class,
     lesson_progress,
     wait_for_lesson_active,
 )
 from modules.tasks import has_visible_verification, wait_until_verification_hidden
-from modules.utils import get_filtered_class, get_lesson_name
+from modules.utils import get_filtered_class, get_lesson_name, get_video_attr
 from modules.fusion_adapter import FusionAdapter
 from modules import human
 from modules.pointer import human_click
@@ -26,6 +28,34 @@ CATALOG_ATTACH_TIMEOUT_MS = 5_000
 # 等课时里的 video 出现。等不到就说明这一节不是视频(计分测验、PPT/PDF 等),
 # 跳过去学下一个, 不要卡在这里, 也不要让整门课失败。
 VIDEO_ATTACH_TIMEOUT_MS = 10_000
+# 换课时之后最多等这么久, 等播放器换成新课时的视频
+NEW_VIDEO_TIMEOUT_S = 10.0
+
+
+async def lesson_is_active(lesson: Locator, catalog: CatalogSelectors) -> bool:
+    """这个课时现在是不是已经是当前课时(只看一眼, 不等)。"""
+    try:
+        if has_class(await lesson.get_attribute("class", timeout=2000), catalog.active_class):
+            return True
+        return bool(catalog.active) and await lesson.locator(catalog.active).count() > 0
+    except Exception:
+        return False
+
+
+async def wait_for_new_video(page: Page, before_src: str) -> bool:
+    """等播放器换成新的视频(地址变了)。
+
+    目录上的课时一变成"当前"就去读视频时长, 读到的常常还是页面上原来那个视频:
+    用户朋友的日志里, 课时开始时记下的时长是上一个视频的 831.5 秒(而且已经放到
+    结尾), 实际在放的是 551.8 秒的新视频, 后面的进度对齐、放完判断全按错的时长算。
+    """
+    deadline = time.monotonic() + NEW_VIDEO_TIMEOUT_S
+    while time.monotonic() < deadline:
+        src = await get_video_attr(page, "currentSrc")
+        if src and src != before_src:
+            return True
+        await asyncio.sleep(0.5)
+    return False
 
 
 class CourseOutcome(Enum):
@@ -95,6 +125,10 @@ async def run_course(
     for index, lesson in enumerate(lessons):
         position = f"{index + 1}/{len(lessons)}"
         playback_enabled.clear()
+        # 切到别的课时才需要等新视频; 本来就是当前课时(打开页面时平台已经选中它)就不用
+        before_src = None
+        if not await lesson_is_active(lesson, catalog):
+            before_src = await get_video_attr(page, "currentSrc")
         await human_click(lesson, timeout=LESSON_CLICK_TIMEOUT_MS)
         active = await wait_for_lesson_active(lesson, catalog)
         if not active:
@@ -112,6 +146,8 @@ async def run_course(
             logger.event("课程结果", 结果="课时无法选中", 序号=position)
             return CourseOutcome.FAILED
 
+        if before_src and not await wait_for_new_video(page, before_src):
+            logger.debug("换课时后视频地址没变, 按当前视频继续")
         await human.sleep(1.0)
         title = await get_lesson_name(page, lesson, catalog)
         logger.info(f"正在学习:{title}")

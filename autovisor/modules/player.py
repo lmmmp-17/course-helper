@@ -84,6 +84,24 @@ async def _click_here(page: Page) -> None:
     await page.mouse.up()
 
 
+async def _pointer_on(page: Page, selector: str) -> str | None:
+    """指针下面是不是这个控件; 是就返回它的文字, 不是返回 None。
+
+    按下之前必须确认: 控制栏没动静 2.5 秒就收起, 菜单也会收起, 这时按下去会落在
+    视频区域上——那是播放/暂停开关, 视频就被暂停了。用户朋友在 Windows 上的日志里
+    视频每隔几秒停一次("不点它也会自己停"), 就是倍速菜单反复点空落在了视频上。
+    """
+    pointer = pointer_for(page)
+    return await page.evaluate(
+        """([selector, x, y]) => {
+            const hit = document.elementFromPoint(x, y);
+            const target = hit && hit.closest(selector);
+            return target ? (target.innerText || "") : null;
+        }""",
+        [selector, round(pointer.x), round(pointer.y)],
+    )
+
+
 async def reveal_controls(page: Page) -> bool:
     """把指针移到视频区域, 让控制栏展开。
 
@@ -152,6 +170,10 @@ async def _raise_rate(page: Page, cap: float) -> float | None:
             return target
 
         await _move_onto(page, f"{SPEED_TAB} >> nth={labels.index(target)}")
+        under = await _pointer_on(page, ".speedTab")
+        if under is None or parse_rate_label(under) != target:
+            logger.debug_throttled("player:speed_missed", "倍速选项不在指针下面了(菜单收起), 这次不按")
+            return None
         await _click_here(page)
         await human.sleep_between(0.3, 0.6)
         return target if await current_rate_label(page) == target else None
@@ -182,6 +204,9 @@ async def _mute_by_button(page: Page) -> bool:
             logger.debug_throttled("player:volume_absent", "静音跳过: 没有音量按钮")
             return False
         if not await _move_onto(page, VOLUME_ICON):
+            return False
+        if await _pointer_on(page, ".volumeIcon") is None:
+            logger.debug_throttled("player:volume_missed", "音量按钮不在指针下面了(控制栏收起), 这次不按")
             return False
         await _click_here(page)
         await human.sleep_between(0.3, 0.5)

@@ -100,6 +100,27 @@ async def task_monitor(tasks: list[asyncio.Task]) -> None:
     logger.info("任务监控已退出.", shift=True)
 
 
+async def mute_if_audible(page: Page, volume=None, muted=None) -> str | None:
+    """视频没静音就静音, 返回做了什么(写进日志); 已经是静音或读不到状态返回 None。"""
+    if volume is None:
+        volume = await get_video_attr(page, "volume")
+        muted = await get_video_attr(page, "muted")
+    # volume 为 None 说明这一刻读不到播放器状态(课时切换中), 什么都别做
+    if volume is None or muted or volume == 0:
+        return None
+    # 先点播放器自己的音量按钮: 图标由它自己切换, 不用我们伪造 volumeNone
+    if await player.mute_by_button(page):
+        return f"音量 {volume}->静音(点控件)"
+    await run_on(page, "video", "(el) => { el.volume = 0; }", "设置静音")
+    await run_on(
+        page,
+        ".volumeBox",
+        '(el) => el.classList.add("volumeNone")',
+        "更新静音图标",
+    )
+    return f"音量 {volume}->0(写属性)"
+
+
 # 倍速菜单走不通时隔多久再试(秒): 4、8、16、32, 之后每 60 秒一次
 SPEED_RETRY_FIRST = 4
 SPEED_RETRY_MAX = 60
@@ -170,20 +191,10 @@ async def video_optimize(page: Page, config: Config) -> None:
             rate = await get_video_attr(page, "playbackRate")
             changes = []
 
-            # volume 为 None 说明这一刻读不到播放器状态(课时切换中), 什么都别做
-            if config.soundOff and volume is not None and not muted and volume != 0:
-                # 先点播放器自己的音量按钮: 图标由它自己切换, 不用我们伪造 volumeNone
-                if await player.mute_by_button(page):
-                    changes.append(f"音量 {volume}->静音(点控件)")
-                else:
-                    await run_on(page, "video", "(el) => { el.volume = 0; }", "设置静音")
-                    await run_on(
-                        page,
-                        ".volumeBox",
-                        '(el) => el.classList.add("volumeNone")',
-                        "更新静音图标",
-                    )
-                    changes.append(f"音量 {volume}->0(写属性)")
+            if config.soundOff:
+                muted_now = await mute_if_audible(page, volume, muted)
+                if muted_now:
+                    changes.append(muted_now)
 
             # limitSpeed = 0 表示完全不碰倍速: 播放器自己记住的倍速也是用户的真实
             # 状态, 中途改它会产生一次 ratechange, 没必要。
@@ -223,14 +234,20 @@ async def video_optimize(page: Page, config: Config) -> None:
 
 # 播放器未就绪时最多等这么多轮(每轮约 2 秒)再退回脚本起播
 MAX_NOT_READY_ROUNDS = 4
+# 点视频区域没起播时, 再点几轮才退回脚本起播。平台弹题前会先暂停视频, 弹窗要过
+# 一会儿才完全出来: 以前第一下没点上就立刻 el.play(), 视频在弹窗底下又放了几秒,
+# 再被"遮罩层暂停"用脚本停掉(真实页面上两种弹窗都见过)。下一轮弹窗已经出来了,
+# 会被当成遮挡, 老老实实等着。
+MAX_CLICK_RETRIES = 3
 
 
 async def play_video(
-    page: Page, playback_enabled: asyncio.Event | None = None
+    page: Page, playback_enabled: asyncio.Event | None = None, sound_off: bool = False
 ) -> None:
     # timeout=0: 一直等, 后台任务不能因为页面加载慢就退出
     await page.wait_for_load_state("domcontentloaded", timeout=0)
     not_ready_rounds = 0
+    click_failures = 0
     while True:
         try:
             await human.sleep(2.0)
@@ -291,6 +308,12 @@ async def play_video(
                 # 退回 el.play(), 于是每节课的第一次起播都是脚本调用。现在先让它
                 # 装一会儿, 连着几轮都没就绪才退回去。
                 ready = (state["readyState"] or 0) >= 3
+                # 起播前先静音: 换课时后播放器会把音量重置成 0.5, 以前续播抢在调节模块
+                # 前面点了播放, 有一秒左右是不静音在放(真实页面上看到过)
+                if ready and sound_off:
+                    muted_now = await mute_if_audible(page)
+                    if muted_now:
+                        logger.event("播放器调节", 项目=f"{muted_now}, 起播前")
                 by_click = await player.play_by_click(page) if ready else False
                 if not by_click and not ready and not_ready_rounds < MAX_NOT_READY_ROUNDS:
                     not_ready_rounds += 1
@@ -299,9 +322,16 @@ async def play_video(
                         f"播放器还没就绪(readyState={state['readyState']}), 等下一轮再起播",
                     )
                     continue
+                if not by_click and ready and click_failures < MAX_CLICK_RETRIES:
+                    click_failures += 1
+                    logger.debug_throttled(
+                        "video:click_retry", "点视频区域没起播, 下一轮再点(可能有弹窗正在弹出来)"
+                    )
+                    continue
                 if not by_click:
                     await run_on(page, "video", "(el) => el.play()", "恢复播放")
                 not_ready_rounds = 0
+                click_failures = 0
                 logger.debug("视频已恢复播放.")
                 logger.event(
                     "恢复播放",
