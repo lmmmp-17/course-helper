@@ -344,3 +344,57 @@ class SpeedGateTests(unittest.TestCase):
             gate.failed(("a.mp4", 1.0))
         gate.failed(("b.mp4", 1.0))
         self.assertEqual(gate.retry_at, SPEED_RETRY_FIRST)
+
+
+class _Tabs:
+    def __init__(self, labels):
+        self.labels = labels
+
+    async def count(self):
+        return len(self.labels)
+
+    def nth(self, i):
+        tab = mock.MagicMock()
+        tab.inner_text = mock.AsyncMock(return_value=self.labels[i])
+        return tab
+
+
+class MissedPressTests(unittest.IsolatedAsyncioTestCase):
+    """按下之前确认指针下面就是那个控件: 菜单或控制栏收起后按下去会落在视频区域上,
+    那是播放/暂停开关(用户朋友的日志里视频每隔几秒就停一次)。"""
+
+    async def test_speed_menu_is_not_pressed_when_the_tab_is_gone(self):
+        page = mock.MagicMock()
+        page.locator = lambda _selector: _Tabs(["X 1.5", "X 1.25", "X 1.0"])
+        with mock.patch.object(player, "reveal_controls", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(player, "_open_speed_menu", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(player, "current_rate_label", mock.AsyncMock(return_value=1.0)), \
+                mock.patch.object(player, "_move_onto", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(player, "_pointer_on", mock.AsyncMock(return_value=None)), \
+                mock.patch.object(player, "_click_here", mock.AsyncMock()) as press:
+            self.assertIsNone(await player.raise_rate(page, float("inf")))
+        press.assert_not_awaited()
+
+    async def test_speed_menu_is_pressed_when_the_right_tab_is_under_the_pointer(self):
+        page = mock.MagicMock()
+        page.locator = lambda _selector: _Tabs(["X 1.5", "X 1.25", "X 1.0"])
+        rates = iter([1.0, 1.5])
+        with mock.patch.object(player, "reveal_controls", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(player, "_open_speed_menu", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(player, "current_rate_label", mock.AsyncMock(side_effect=lambda _p: next(rates))), \
+                mock.patch.object(player, "_move_onto", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(player, "_pointer_on", mock.AsyncMock(return_value="X 1.5")), \
+                mock.patch.object(player.human, "sleep_between", mock.AsyncMock()), \
+                mock.patch.object(player, "_click_here", mock.AsyncMock()) as press:
+            self.assertEqual(await player.raise_rate(page, float("inf")), 1.5)
+        press.assert_awaited_once()
+
+    async def test_volume_is_not_pressed_when_the_control_bar_folded(self):
+        page = mock.MagicMock()
+        page.locator = lambda _selector: _Tabs(["icon"])
+        with mock.patch.object(player, "reveal_controls", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(player, "_move_onto", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(player, "_pointer_on", mock.AsyncMock(return_value=None)), \
+                mock.patch.object(player, "_click_here", mock.AsyncMock()) as press:
+            self.assertFalse(await player.mute_by_button(page))
+        press.assert_not_awaited()
