@@ -282,13 +282,25 @@ async def optimize_page(
     page: Page, config: Config, catalog: CatalogSelectors
 ) -> None:
     try:
+        if catalog.name == "fusion":
+            # 融合共享课打开时可能先弹出上次交过的 AI 随堂练习, 盖在最上面: 先关它
+            from modules.fusion_adapter import FusionAdapter
+
+            await FusionAdapter.skip_ai_exercise(page)
+
         preread_close = page.locator(
             ".ss2077-custom-modal .ss2077-custom-dialog:visible "
             ".ss2077-custom-title > img.icon"
         ).first
         if await preread_close.count() and await preread_close.is_visible():
-            await human_click(preread_close, timeout=2000)
-            logger.info("已关闭学前必读弹窗.")
+            try:
+                await human_click(preread_close, timeout=2000)
+                logger.info("已关闭学前必读弹窗.")
+            except TimeoutError:
+                # 去点的时候它被平台自己收起了(融合共享课上 AI 随堂练习弹出来时见过)
+                if await preread_close.count():
+                    raise
+                logger.debug("学前必读弹窗在点之前已经关了.")
 
         if catalog.name == "legacy":
             # "学习时长/学前必读"弹窗(.studytime-div)只在未读过时显示: 节点常驻 DOM,

@@ -11,13 +11,25 @@ from modules import fusion_adapter, tasks
 from modules.fusion_adapter import AI_CLASS_EXERCISE_DIALOG, FusionAdapter
 
 
+class _Count:
+    def __init__(self, n):
+        self.n = n
+
+    async def count(self):
+        return self.n
+
+
 class _Page:
-    def __init__(self):
+    def __init__(self, finished=False):
         self.scripts = []
+        self.finished = finished
 
     async def evaluate(self, script, _arg=None):
         self.scripts.append(script)
         return True
+
+    def locator(self, selector):
+        return _Count(1 if self.finished and selector == fusion_adapter._FINISHED_SELECTOR else 0)
 
 
 class AiExerciseTests(unittest.IsolatedAsyncioTestCase):
@@ -27,8 +39,20 @@ class AiExerciseTests(unittest.IsolatedAsyncioTestCase):
                 mock.patch.object(fusion_adapter, "_click_if_present", mock.AsyncMock(return_value=True)) as click, \
                 mock.patch.object(fusion_adapter.human, "sleep_between", mock.AsyncMock()):
             self.assertTrue(await FusionAdapter.skip_ai_exercise(page))
-        self.assertEqual(click.await_count, 2, "选项和提交都应当是点出来的")
+        clicked = [c.args[1] for c in click.await_args_list]
+        # 选项、提交都是点出来的; 交完还开着(显示答案)就点 × 关掉
+        self.assertEqual(clicked, [fusion_adapter._OPTION_SELECTOR, fusion_adapter._SUBMIT_SELECTOR,
+                                   fusion_adapter._CLOSE_SELECTOR])
         self.assertFalse([s for s in page.scripts if "play(" in s or "muted" in s], page.scripts)
+
+    async def test_an_already_submitted_exercise_is_closed_not_answered_again(self):
+        # 打开页面时平台把上次交过的练习再弹出来, 按钮是灰的"已提交": 只能点 × (真实页面)
+        page = _Page(finished=True)
+        with mock.patch.object(FusionAdapter, "ai_exercise_visible", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(fusion_adapter, "_click_if_present", mock.AsyncMock(return_value=True)) as click, \
+                mock.patch.object(fusion_adapter.human, "sleep_between", mock.AsyncMock()):
+            self.assertTrue(await FusionAdapter.skip_ai_exercise(page))
+        self.assertEqual([c.args[1] for c in click.await_args_list], [fusion_adapter._CLOSE_SELECTOR])
 
     def test_the_dialog_counts_as_blocking_the_player(self):
         self.assertIn(AI_CLASS_EXERCISE_DIALOG, tasks.BLOCKING_OVERLAY_SELECTORS)

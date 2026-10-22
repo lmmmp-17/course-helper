@@ -1,3 +1,4 @@
+import asyncio
 import math
 import unittest
 from unittest import mock
@@ -43,10 +44,12 @@ class _Locator:
     async def wait_for(self, state=None, timeout=None):
         self.waits.append(timeout)
 
-    async def bounding_box(self):
+    async def bounding_box(self, timeout=None):
+        self.waits.append(timeout)
         return self.box
 
-    async def evaluate(self, script, arg=None):
+    async def evaluate(self, script, arg=None, timeout=None):
+        self.waits.append(timeout)
         if script is pointer._LOCAL_RECT_JS:
             return {"x": self.box["x"], "y": self.box["y"]}
         if script is pointer._SCROLL_PARENT_JS:
@@ -127,11 +130,14 @@ class PointerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(target.fallback_clicks, [1234])
 
     async def test_click_never_inherits_the_24h_page_timeout(self):
+        # 每一步都要带超时: 元素在"确认可见"之后消失, 不限时的 bounding_box /
+        # evaluate 会一直等下去(真实页面上卡死过整个流程)
         page = _Page()
         target = _Locator(page)
         with _no_sleep():
             await pointer.Pointer(page).click(target)
-        self.assertEqual(target.waits, [pointer.DEFAULT_CLICK_TIMEOUT_MS])
+        self.assertGreater(len(target.waits), 3)
+        self.assertEqual(set(target.waits), {pointer.DEFAULT_CLICK_TIMEOUT_MS})
 
     async def test_one_pointer_per_page_keeps_position(self):
         page = _Page()
@@ -268,3 +274,40 @@ class ExpandCatalogTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PointerLockTests(unittest.IsolatedAsyncioTestCase):
+    async def test_control_operations_wait_for_a_click_in_progress(self):
+        # 展开目录在点章节时, 调节模块不能同时去悬停倍速菜单: 指针被拉来拉去,
+        # 菜单一打开就收起(真实页面上倍速连续 4 次没调上)
+        from modules import player
+
+        page = _Page()
+        started = []
+
+        async def fake_raise(_page, _cap):
+            started.append("raise_rate")
+            return 1.5
+
+        lock = pointer.pointer_for(page).lock
+        with mock.patch.object(player, "_raise_rate", fake_raise):
+            await lock.acquire()
+            task = asyncio.create_task(player.raise_rate(page, 1.5))
+            await asyncio.sleep(0.05)
+            self.assertEqual(started, [], "指针被占着时不该开始")
+            lock.release()
+            self.assertEqual(await task, 1.5)
+        self.assertEqual(started, ["raise_rate"])
+
+    async def test_click_holds_the_pointer_until_released(self):
+        page = _Page()
+        target = _Locator(page)
+        lock = pointer.pointer_for(page).lock
+        await lock.acquire()
+        with _no_sleep():
+            task = asyncio.create_task(pointer.Pointer.click(pointer.pointer_for(page), target, timeout=500))
+            await asyncio.sleep(0.05)
+            self.assertEqual(page.mouse.downs, 0)
+            lock.release()
+            await task
+        self.assertEqual(page.mouse.downs, 1)

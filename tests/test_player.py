@@ -56,10 +56,10 @@ class _Locator:
     async def count(self):
         return self._count
 
-    async def bounding_box(self):
+    async def bounding_box(self, timeout=None):
         return self._box
 
-    async def inner_text(self):
+    async def inner_text(self, timeout=None):
         return self._text
 
     async def is_visible(self):
@@ -317,22 +317,30 @@ class SpeedGateTests(unittest.TestCase):
         self.assertTrue(gate.wants(("a.mp4", 1.0)))
         self.assertTrue(gate.wants(("b.mp4", 1.5)))
 
-    def test_gives_up_after_repeated_failures(self):
-        from modules.tasks import MAX_SPEED_TRIES, SpeedGate
+    def test_failures_back_off_instead_of_giving_up(self):
+        from modules.tasks import SPEED_RETRY_FIRST, SPEED_RETRY_MAX, SpeedGate
 
-        gate = SpeedGate()
-        for _ in range(MAX_SPEED_TRIES - 1):
-            gate.failed(("a.mp4", 1.0))
-            self.assertTrue(gate.wants(("a.mp4", 1.0)))
-        gate.failed(("a.mp4", 1.0))
-        self.assertFalse(gate.wants(("a.mp4", 1.0)), "菜单走不通时不该一直去点")
-        self.assertTrue(gate.wants(("b.mp4", 1.0)), "换了视频要重新试")
+        now = [100.0]
+        gate = SpeedGate(clock=lambda: now[0])
+        key = ("a.mp4", 1.0)
+        waits = []
+        for _ in range(6):
+            gate.failed(key)
+            self.assertFalse(gate.wants(key), "刚失败就不该马上再去点")
+            waits.append(gate.retry_at - now[0])
+            now[0] = gate.retry_at
+            self.assertTrue(gate.wants(key), "到点了要再试, 不能就此不管停在 1 倍速")
+        self.assertEqual(waits[0], SPEED_RETRY_FIRST)
+        self.assertEqual(waits, sorted(waits))
+        self.assertEqual(waits[-1], SPEED_RETRY_MAX)
+        self.assertTrue(gate.wants(("b.mp4", 1.0)), "换了视频马上重新试")
 
     def test_failures_on_another_video_start_over(self):
-        from modules.tasks import MAX_SPEED_TRIES, SpeedGate
+        from modules.tasks import SPEED_RETRY_FIRST, SpeedGate
 
-        gate = SpeedGate()
-        for _ in range(MAX_SPEED_TRIES - 1):
+        now = [0.0]
+        gate = SpeedGate(clock=lambda: now[0])
+        for _ in range(4):
             gate.failed(("a.mp4", 1.0))
         gate.failed(("b.mp4", 1.0))
-        self.assertTrue(gate.wants(("b.mp4", 1.0)))
+        self.assertEqual(gate.retry_at, SPEED_RETRY_FIRST)

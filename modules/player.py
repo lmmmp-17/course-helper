@@ -38,6 +38,9 @@ SPEED_TAB = ".speedBox .speedList .speedTab"
 # 控制栏在指针静止约 2.5 秒后自动收起(实测)。所有控件操作必须在这个窗口内做完,
 # 所以这条路径上的等待都取短的固定区间, 不用 human.sleep 那条会偶发拉长的长尾。
 CONTROL_VISIBLE_MS = 2500
+# 读控件位置、文字的上限。页面默认超时是 24 小时, 控件刚好消失(换课时、弹窗)时
+# 不限时的读取会一直等下去, 调节模块就此不再工作
+CONTROL_READ_MS = 2000
 
 _RATE_IN_LABEL = re.compile(r"(\d+(?:\.\d+)?)")
 
@@ -56,7 +59,7 @@ async def _move_onto(page: Page, selector: str) -> bool:
     浏览器要再收到一个鼠标事件才会重新做命中测试, 少了这一步, 悬停才展开的
     倍速菜单会间歇性打不开。
     """
-    box = await page.locator(selector).first.bounding_box()
+    box = await page.locator(selector).first.bounding_box(timeout=CONTROL_READ_MS)
     if not box or box["width"] <= 0 or box["height"] <= 0:
         return False
     pointer = pointer_for(page)
@@ -101,7 +104,7 @@ async def current_rate_label(page: Page) -> float | None:
     label = page.locator(SPEED_LABEL).first
     if not await label.count():
         return None
-    return parse_rate_label(await label.inner_text())
+    return parse_rate_label(await label.inner_text(timeout=CONTROL_READ_MS))
 
 
 def pick_rate(labels: list[float | None], cap: float) -> float | None:
@@ -111,6 +114,12 @@ def pick_rate(labels: list[float | None], cap: float) -> float | None:
 
 
 async def raise_rate(page: Page, cap: float) -> float | None:
+    # 整个操作期间占住指针, 不让别的任务把它拉走(见 Pointer.lock)
+    async with pointer_for(page).lock:
+        return await _raise_rate(page, cap)
+
+
+async def _raise_rate(page: Page, cap: float) -> float | None:
     """用播放器的倍速菜单切到不超过 cap 的最高一档, 返回实际切到的档位。
 
     只用菜单里列出来的档位: 那才是平台允许的, 倍速标签也由播放器自己更新。
@@ -129,7 +138,7 @@ async def raise_rate(page: Page, cap: float) -> float | None:
         # 先把所有档位的文字读出来再动指针: 边读边移会白耗展开窗口
         tabs = page.locator(SPEED_TAB)
         labels = [
-            parse_rate_label(await tabs.nth(i).inner_text())
+            parse_rate_label(await tabs.nth(i).inner_text(timeout=CONTROL_READ_MS))
             for i in range(await tabs.count())
         ]
         target = pick_rate(labels, cap)
@@ -156,6 +165,12 @@ async def raise_rate(page: Page, cap: float) -> float | None:
 
 
 async def mute_by_button(page: Page) -> bool:
+    # 整个操作期间占住指针, 不让别的任务把它拉走(见 Pointer.lock)
+    async with pointer_for(page).lock:
+        return await _mute_by_button(page)
+
+
+async def _mute_by_button(page: Page) -> bool:
     """点播放器的音量按钮静音。走通返回 True。
 
     静音图标由播放器自己切换, 不需要我们去加 volumeNone 这个类。
@@ -187,6 +202,12 @@ async def mute_by_button(page: Page) -> bool:
 
 
 async def play_by_click(page: Page) -> bool:
+    # 整个操作期间占住指针, 不让别的任务把它拉走(见 Pointer.lock)
+    async with pointer_for(page).lock:
+        return await _play_by_click(page)
+
+
+async def _play_by_click(page: Page) -> bool:
     """点视频区域起播。走通(视频确实在放了)返回 True。
 
     只在确认处于暂停时调用: 这个区域是开关, 正在播放时点一下会变成暂停。
