@@ -107,3 +107,50 @@ class NoCourseUrlTests(unittest.TestCase):
         code, seen = self._run_cli(["--wait-course"], "URL1 = https://studyvideoh5.zhihuishu.com/stuStudy?x=1")
         self.assertEqual(code, 0)
         self.assertTrue(seen["wait_course"])
+
+
+class _Chosen(Exception):
+    """测试用: 课程选好的那一刻结束 main()"""
+
+
+class BackgroundTasksTests(unittest.IsolatedAsyncioTestCase):
+    async def test_nothing_touches_the_page_while_waiting_for_a_course(self):
+        # 以前登录完就启动续播模块, 等你点课程时它看到视频在放就暂停:
+        # 认不出来的课程页开在主标签页里, 就一直被暂停, 点了播放又自己停
+        started = []
+
+        def background(name):
+            async def task(*_args, **_kwargs):
+                return None
+
+            def factory(*args, **kwargs):
+                started.append(name)
+                return task(*args, **kwargs)
+            return factory
+
+        seen_at_choice = {}
+
+        async def choose(_context, _page):
+            seen_at_choice["started"] = list(started)
+            raise _Chosen
+
+        session = mock.MagicMock(attached=False, close=mock.AsyncMock())
+        playwright = mock.MagicMock()
+        playwright.__aenter__ = mock.AsyncMock(return_value=object())
+        playwright.__aexit__ = mock.AsyncMock(return_value=False)
+        config = mock.MagicMock(enableAutoCaptcha=False, attach_existing_chrome=False)
+        with mock.patch.object(Autovisor, "logger", mock.MagicMock(), create=True), \
+                mock.patch.object(Autovisor, "async_playwright", return_value=playwright), \
+                mock.patch.object(Autovisor, "create_browser_session", mock.AsyncMock(return_value=session)), \
+                mock.patch.object(Autovisor, "load_cookies", return_value=None), \
+                mock.patch.object(Autovisor, "ensure_login", mock.AsyncMock(return_value=True)), \
+                mock.patch.object(Autovisor, "persist_login_cookies", mock.AsyncMock()), \
+                mock.patch.object(Autovisor, "wait_for_course_page", choose), \
+                mock.patch.object(Autovisor, "play_video", background("play_video")), \
+                mock.patch.object(Autovisor, "video_optimize", background("video_optimize")), \
+                mock.patch.object(Autovisor, "skip_questions", background("skip_questions")), \
+                mock.patch.object(Autovisor, "wait_for_verify", background("wait_for_verify")):
+            with self.assertRaises(_Chosen):
+                await Autovisor.main(config, wait_course=True)
+        self.assertEqual(seen_at_choice["started"], [])
+        session.close.assert_awaited()

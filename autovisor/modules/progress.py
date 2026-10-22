@@ -8,6 +8,7 @@ from modules.lesson_navigation import (
     parse_progress_value,
 )
 from modules.logger import Logger
+from modules.pointer import pointer_for
 
 logger = Logger()
 
@@ -39,6 +40,11 @@ def _emit(desc: str, line: str, percent: int) -> None:
 
 # 视频区域内移动鼠标
 async def move_mouse(page: Page):
+    async with pointer_for(page).lock:
+        await _move_mouse(page)
+
+
+async def _move_mouse(page: Page):
     try:
         await page.wait_for_selector(".videoArea", state="attached", timeout=5000)
         elem = page.locator(".videoArea")

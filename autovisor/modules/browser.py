@@ -137,6 +137,8 @@ AUTOMATION_FLAGS = ["--disable-blink-features=AutomationControlled"]
 # Edge 会拿 Windows 上登录的微软账号, 把这个临时 profile 也自动登录上(实测 Edge 155 /
 # Win11; 因为带了 --disable-sync, 同步没打开)。msImplicitSignin 关掉这个自动登录。
 EDGE_EXTRA_DISABLED_FEATURES = ["msImplicitSignin"]
+# 页面上 Playwright 操作的默认超时(和 Playwright 自己的默认值一样)
+DEFAULT_TIMEOUT_MS = 30_000
 
 
 def playwright_disabled_features() -> list[str] | None:
@@ -333,4 +335,7 @@ async def _prepare_page(page: Page, logger, *, owned: bool) -> None:
     # 连接到用户自己的 Chrome 时不动窗口——那是用户的窗口
     if owned:
         await maximize_window(page, logger)
-    page.set_default_timeout(24 * 3600 * 1000)
+    # 以前是 24 小时。第一节课开始后 run_course 会改成 10 秒, 所以 24 小时只管
+    # "打开浏览器到第一节课"这一段, 而这一段里元素一消失就整个卡住(真实页面上遇到过)。
+    # 要久等的地方(等登录、等课程目录、等视频)都自己写了超时。
+    page.set_default_timeout(DEFAULT_TIMEOUT_MS)

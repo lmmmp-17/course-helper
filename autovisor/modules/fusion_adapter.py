@@ -35,6 +35,10 @@ logger = Logger()
 AI_CLASS_EXERCISE_DIALOG = ".ai-class-exercise-dialog"
 _OPTION_SELECTOR = ".ai-class-exercise-dialog .option"
 _SUBMIT_SELECTOR = ".ai-class-exercise-dialog .el-dialog__footer button.el-button"
+# 右上角的 ×。没作答时点了不关("未作答的弹题不能关闭"), 交过之后才关得掉
+_CLOSE_SELECTOR = ".ai-class-exercise-dialog .header-icon"
+# 交过的练习: 提交按钮换成灰的"已提交"
+_FINISHED_SELECTOR = ".ai-class-exercise-dialog .is-finish"
 # 折叠章节头(Element-UI collapse), 需展开以采集完整课时列表。
 COLLAPSE_HEADER_SELECTOR = ".el-collapse-item__header"
 _COLLAPSED_HEADER_SELECTOR = ".el-collapse-item:not(.is-active) > .el-collapse-item__header"
@@ -112,8 +116,15 @@ class FusionAdapter:
         """
         if not await FusionAdapter.ai_exercise_visible(page):
             return False
-        logger.info("检测到 AI随堂练习弹窗, 自动选择并提交.")
         try:
+            # 打开页面时平台会把上次交过的练习再弹出来: 按钮是灰的"已提交", 只能点 ×。
+            # 以前只会选选项、点提交, 这种弹窗就一直挡着, 后面的点击全被它拦下(真实页面)
+            if await page.locator(_FINISHED_SELECTOR).count():
+                logger.info("AI 随堂练习之前已经交过, 关掉它.")
+                await _click_if_present(page, _CLOSE_SELECTOR)
+                await human.sleep_between(0.6, 1.2)
+                return True
+            logger.info("检测到 AI随堂练习弹窗, 自动选择并提交.")
             # 真实点击。以前是页面里的 opt.click() / btn.click(), 事件 isTrusted=false。
             clicked = await _click_if_present(page, _OPTION_SELECTOR)
             if not clicked:
@@ -121,6 +132,11 @@ class FusionAdapter:
             await human.sleep_between(0.5, 1.4)
             submitted = await _click_if_present(page, _SUBMIT_SELECTOR)
             await human.sleep_between(0.8, 1.6)
+            # 交完弹窗可能还开着、显示正确答案: 看一眼再点 × 关掉
+            if await FusionAdapter.ai_exercise_visible(page):
+                await human.sleep_between(1.0, 2.5)
+                await _click_if_present(page, _CLOSE_SELECTOR)
+                await human.sleep_between(0.6, 1.2)
             logger.info("AI 随堂练习已自动提交关闭.")
             return bool(clicked or submitted)
         except TargetClosedError:

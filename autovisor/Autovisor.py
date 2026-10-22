@@ -265,6 +265,17 @@ async def main(config, wait_course: bool = False) -> bool:
             logged_in = True
 
             logger.context(登录方式="Cookie" if login_by_cookie else "账号")
+
+            # 没配课程地址(或者从启动器来, 指定了 --wait-course): 等用户自己点开一门课
+            course_urls = [] if wait_course else list(config.course_urls)
+            if not course_urls:
+                logger.section("选择课程")
+                course_urls = [await wait_for_course_page(context, page)]
+
+            # 选好课程才启动后台任务。以前登录完就启动, 等你点课程的时候续播模块
+            # 已经在跑了, 而那时还没选课时, 它看到视频在放就暂停: 认不出来的课程页
+            # 开在主标签页里, 视频就一直被暂停, 点了播放又自己停(用户朋友在 Windows
+            # 上遇到过, 融合共享课还没适配的时候)。
             tasks.extend(
                 [
                     asyncio.create_task(
@@ -285,11 +296,6 @@ async def main(config, wait_course: bool = False) -> bool:
                 logger.info("已连接现有 Chrome, 不隐藏用户自己的浏览器窗口.")
             monitor_task = asyncio.create_task(task_monitor(tasks))
 
-            # 没配课程地址(或者从启动器来, 指定了 --wait-course): 等用户自己点开一门课
-            course_urls = [] if wait_course else list(config.course_urls)
-            if not course_urls:
-                logger.section("选择课程")
-                course_urls = [await wait_for_course_page(context, page)]
             course_total = len(course_urls)
             for index, course_url in enumerate(course_urls, 1):
                 logger.section(f"课程 {index}/{course_total}")
@@ -329,6 +335,7 @@ async def main(config, wait_course: bool = False) -> bool:
                             logger.event("当前课程", 名称=title)
 
                 playback_enabled.clear()
+                logger.info("正在读取课程目录, 选好要学的课时就自动开始播放; 这之前视频会保持暂停, 不用去点.")
                 outcome = await run_course(
                     page, catalog, config, logger, playback_enabled
                 )

@@ -100,8 +100,9 @@ async def task_monitor(tasks: list[asyncio.Task]) -> None:
     logger.info("任务监控已退出.", shift=True)
 
 
-# 同一个视频、同一个倍速下, 倍速菜单最多试这么多次
-MAX_SPEED_TRIES = 3
+# 倍速菜单走不通时隔多久再试(秒): 4、8、16、32, 之后每 60 秒一次
+SPEED_RETRY_FIRST = 4
+SPEED_RETRY_MAX = 60
 
 
 class SpeedGate:
@@ -109,33 +110,40 @@ class SpeedGate:
 
     倍速设成 max 时 "rate < limitSpeed" 永远成立: 没有这道闸, 已经在最高档了还会
     每 2 秒去菜单里再点一次(Windows 上实测, 看起来就是在无限选倍速)。
-    菜单走不通(打不开、没有合适的档位)时, 同一个 (视频, 倍速) 试 MAX_SPEED_TRIES
-    次就不再碰, 免得指针一直在控制栏上晃。换了视频, 或者播放器把倍速改回去了,
-    key 跟着变, 会重新处理。
+    换了视频, 或者播放器把倍速改回去了, key 跟着变, 会重新处理。
+
+    菜单走不通(控制栏还没出来、菜单打不开)时不放弃, 只是越隔越久再试, 免得指针
+    一直在控制栏上晃。曾经试 3 次就不管了: 页面刚打开那十几秒控制栏点不动, 正好
+    失败 3 次, 这个视频就一直停在 1 倍速(真实页面上看到过)。
     """
 
-    def __init__(self):
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
         self.settled = None
         self.failing = None
         self.failures = 0
+        self.retry_at = 0.0
 
     def wants(self, key) -> bool:
-        return key != self.settled
+        if key == self.settled:
+            return False
+        return key != self.failing or self.clock() >= self.retry_at
 
     def succeeded(self, key) -> None:
         self.settled = key
-        self.failing, self.failures = None, 0
+        self.failing, self.failures, self.retry_at = None, 0, 0.0
 
     def failed(self, key) -> None:
         self.failures = self.failures + 1 if key == self.failing else 1
         self.failing = key
-        if self.failures >= MAX_SPEED_TRIES:
-            logger.debug(f"倍速菜单连续 {self.failures} 次没走通, 这个视频先不调倍速")
-            self.succeeded(key)
+        delay = min(SPEED_RETRY_MAX, SPEED_RETRY_FIRST * 2 ** (self.failures - 1))
+        self.retry_at = self.clock() + delay
+        logger.debug(f"倍速菜单第 {self.failures} 次没走通, {delay} 秒后再试")
 
 
 async def video_optimize(page: Page, config: Config) -> None:
-    await page.wait_for_load_state("domcontentloaded")
+    # timeout=0: 一直等, 后台任务不能因为页面加载慢就退出
+    await page.wait_for_load_state("domcontentloaded", timeout=0)
     speed_gate = SpeedGate()
     while True:
         try:
@@ -220,7 +228,8 @@ MAX_NOT_READY_ROUNDS = 4
 async def play_video(
     page: Page, playback_enabled: asyncio.Event | None = None
 ) -> None:
-    await page.wait_for_load_state("domcontentloaded")
+    # timeout=0: 一直等, 后台任务不能因为页面加载慢就退出
+    await page.wait_for_load_state("domcontentloaded", timeout=0)
     not_ready_rounds = 0
     while True:
         try:
@@ -315,7 +324,8 @@ async def play_video(
 
 
 async def skip_questions(page: Page, event_loop) -> None:
-    await page.wait_for_load_state("domcontentloaded")
+    # timeout=0: 一直等, 后台任务不能因为页面加载慢就退出
+    await page.wait_for_load_state("domcontentloaded", timeout=0)
     while True:
         try:
             if "studywisdomh5.zhihuishu.com" in page.url:
@@ -374,7 +384,8 @@ async def skip_questions(page: Page, event_loop) -> None:
 
 
 async def wait_for_verify(page: Page, config, event_loop) -> None:
-    await page.wait_for_load_state("domcontentloaded")
+    # timeout=0: 一直等, 后台任务不能因为页面加载慢就退出
+    await page.wait_for_load_state("domcontentloaded", timeout=0)
     while True:
         try:
             await asyncio.sleep(2)

@@ -111,6 +111,10 @@ class Pointer:
         self.page = page
         self.x = x
         self.y = y
+        # 一次完整的指针操作(移过去、悬停、按下抬起)做完之前, 别的任务不能动指针。
+        # 后台任务是并发的: 展开目录在点章节时, 调节模块去悬停倍速菜单, 指针被拉来
+        # 拉去, 菜单一打开就收起, 倍速一直调不上(真实页面上连续失败过 4 次)。
+        self.lock = asyncio.Lock()
 
     async def _viewport(self) -> tuple[float, float]:
         size = self.page.viewport_size
@@ -137,19 +141,28 @@ class Pointer:
             else:
                 await human.sleep_between(0.001, 0.009)
 
-    async def _frame_offset(self, locator: Locator, box: dict) -> tuple[float, float]:
-        local = await locator.evaluate(_LOCAL_RECT_JS)
+    async def _frame_offset(
+        self, locator: Locator, box: dict, timeout: float = DEFAULT_CLICK_TIMEOUT_MS
+    ) -> tuple[float, float]:
+        local = await locator.evaluate(_LOCAL_RECT_JS, timeout=timeout)
         return box["x"] - local["x"], box["y"] - local["y"]
 
-    async def _reveal(self, locator: Locator) -> dict | None:
-        """目标在视口或滚动容器外时, 把指针挪到容器上用真实滚轮滚过去。"""
+    async def _reveal(
+        self, locator: Locator, timeout: float = DEFAULT_CLICK_TIMEOUT_MS
+    ) -> dict | None:
+        """目标在视口或滚动容器外时, 把指针挪到容器上用真实滚轮滚过去。
+
+        每一步都带上超时: 页面的默认超时是 24 小时(等登录用的), 元素在"确认可见"之后
+        消失的话(弹窗被平台自己收掉了), 不限时的 bounding_box 会一直等下去。真实页面
+        上这样卡死过整个流程: 关学前必读弹窗时, 它被 AI 随堂练习的弹窗顶掉了。
+        """
         _, view_h = await self._viewport()
         for _ in range(14):
-            box = await locator.bounding_box()
+            box = await locator.bounding_box(timeout=timeout)
             if box is None:
                 return None
-            offset_x, offset_y = await self._frame_offset(locator, box)
-            parent = await locator.evaluate(_SCROLL_PARENT_JS)
+            offset_x, offset_y = await self._frame_offset(locator, box, timeout)
+            parent = await locator.evaluate(_SCROLL_PARENT_JS, timeout=timeout)
             if parent:
                 top = max(0.0, parent["y"] + offset_y)
                 bottom = min(view_h, parent["y"] + offset_y + parent["height"])
@@ -177,16 +190,20 @@ class Pointer:
             await human.sleep_between(0.09, 0.28)
 
         # 滚轮滚不到位(比如容器不响应 wheel)就交给协议级滚动, 保证能继续
-        await locator.scroll_into_view_if_needed()
-        return await locator.bounding_box()
+        await locator.scroll_into_view_if_needed(timeout=timeout)
+        return await locator.bounding_box(timeout=timeout)
 
     async def click(self, locator: Locator, timeout: float | None = None) -> bool:
         """真实点击。走完人类化路径返回 True, 退回 locator.click() 返回 False。"""
+        async with self.lock:
+            return await self._click(locator, timeout)
+
+    async def _click(self, locator: Locator, timeout: float | None) -> bool:
         if timeout is None:
             timeout = DEFAULT_CLICK_TIMEOUT_MS
         try:
             await locator.wait_for(state="visible", timeout=timeout)
-            box = await self._reveal(locator)
+            box = await self._reveal(locator, timeout)
             if box is None:
                 raise LookupError("元素没有可点击的区域")
             target_x, target_y = aim_at(box)
@@ -199,9 +216,9 @@ class Pointer:
                 target_y = min(box["y"] + box["height"] - 1, max(box["y"] + 1, target_y))
                 await self.move_to(target_x, target_y)
 
-            offset_x, offset_y = await self._frame_offset(locator, box)
+            offset_x, offset_y = await self._frame_offset(locator, box, timeout)
             local = {"x": self.x - offset_x, "y": self.y - offset_y}
-            if not await locator.evaluate(_HIT_TEST_JS, local):
+            if not await locator.evaluate(_HIT_TEST_JS, local, timeout=timeout):
                 raise LookupError("落点被其它元素遮挡")
 
             # 停住之后再按下: 人不会在指针停稳的同一毫秒按键
@@ -222,8 +239,9 @@ class Pointer:
 
     async def drift(self) -> None:
         """看视频时的低频指针微动: 一整节课零输入事件本身就是信号。"""
-        width, height = await self._viewport()
-        await self.move_to(human.uniform(0.12, 0.88) * width, human.uniform(0.15, 0.85) * height)
+        async with self.lock:
+            width, height = await self._viewport()
+            await self.move_to(human.uniform(0.12, 0.88) * width, human.uniform(0.15, 0.85) * height)
 
 
 _pointers: "weakref.WeakKeyDictionary[Page, Pointer]" = weakref.WeakKeyDictionary()

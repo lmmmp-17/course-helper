@@ -65,6 +65,10 @@ async def run_course(
     )
     # 融合共享课: 默认折叠的目录需先展开, 否则 get_filtered_class 采不全课时。
     if catalog.name == "fusion":
+        # 一个个点开, 章节多的要几十秒(实测 16 个约 45 秒), 不说一声会以为卡住了
+        logger.info("正在展开折叠的课程目录, 章节多的话要几十秒.")
+        # AI 随堂练习的弹窗可能晚几秒才弹出来, 盖住目录的话展开时一个都点不到
+        await FusionAdapter.skip_ai_exercise(page)
         await FusionAdapter.expand_catalog(page)
         await page.wait_for_timeout(400)
     to_learn = await get_filtered_class(page, catalog)
